@@ -84,7 +84,7 @@ try {
 
   section('[1] Arranque y portada');
   const h = await (await fetch(base + '/api/health')).json();
-  ok(h.ok && h.migrations === 3 && h.push === true && h.ai === false, 'servidor sano, IA sin clave todavía');
+  ok(h.ok && h.migrations === 4 && h.push === true && h.ai === false, 'servidor sano, IA sin clave todavía');
   const home = await fetch(base + '/');
   const html = await home.text();
   ok(home.status === 200 && /Tu tienda de Path of Exile 2/.test(html) && /Gratis, por ahora/.test(html), 'la portada se sirve con su contenido');
@@ -281,6 +281,12 @@ try {
         { name: 'Tyrannical', magnitudes: [{ hash: 'explicit.stat_1', min: '120', max: '120' }] },
         { name: 'of the Sorcerer', magnitudes: [{ hash: 'explicit.stat_2', min: '30', max: '38' }] },
       ] } },
+    // Maza rara: tiene que salir TODO (propiedades, requisitos, implícito y afijos), no una cosa u otra.
+    { id: 'R4', name: 'Torment Burst', base: 'Structured Hammer', price: { amount: 3, currency: 'exalted' }, ilvl: 67,
+      properties: [{ name: '[Mace|One Hand Mace]', values: [] }, { name: '[Physical] Damage', values: [['65-79', 1]] }],
+      requirements: [{ name: 'Level', values: [['45', 0]], displayMode: 0 }],
+      implicitMods: ['+15 to Strength'],
+      mods: ['+120 to maximum Life'] },
   ] });
   await check(user, shopId);
   let det = (await user('GET', '/api/tiendas')).json.shops[0].listings;
@@ -294,6 +300,13 @@ try {
   ok(varita && varita.stats[0] === 'Grants Skill: Level 18 Spellslinger' && varita.stats[1] === '120% increased Spell Damage' && varita.stats[2] === '+30-38 to maximum Mana',
     'se reconstruyen sus características completas, con el implícito primero');
   ok((await get(fake + '/__stats')).calls.some((c) => c.path === '/data/stats'), 'para eso descarga el diccionario de estadísticas del mercado');
+  const maza = det.find((l) => l.name === 'Torment Burst');
+  const fm = (maza && maza.detail) || {};
+  ok(fm.properties && fm.properties[0] === 'One Hand Mace' && fm.properties[1] === 'Physical Damage: 65-79',
+    'la maza trae sus propiedades sin el marcado interno del juego');
+  ok(fm.requirements && fm.requirements[0] === 'Requiere Level: 45' && fm.itemLevel === 67, 'con sus requisitos y su nivel de objeto');
+  ok(fm.implicits && fm.implicits[0] === '+15 to Strength' && fm.mods && fm.mods[0] === '+120 to maximum Life',
+    'y además sus modificadores: la ficha trae todo, no una cosa u otra');
 
   // Corregir la cuenta: se vacían los anuncios viejos y se lee la nueva.
   await post(fake + '/__set', { account: 'Beto#4321', items: [{ id: 'B1', name: 'Objeto de Beto', base: 'Sapphire Ring', price: { amount: 1, currency: 'divine' } }] });

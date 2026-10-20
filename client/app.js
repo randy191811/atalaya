@@ -156,19 +156,37 @@
   function sessionStorageSet(k, v) { try { sessionStorage.setItem(k, v); } catch {} }
 
   // ---------------------------------------------------------------- piezas
+  const txtOf = (m) => (typeof m === 'string' ? m : m && typeof m === 'object' ? String(m.name || m.text || '') : m == null ? '' : String(m));
+
+  // La ficha, con los mismos bloques y en el mismo orden que el juego: propiedades,
+  // requisitos, nivel, implícitos, afijos, cómo se usa y texto de sabor.
   function tooltipHtml(it) {
     const r = esc(it.rarity || 'Normal');
     const twoLines = (it.rarity === 'Rare' || it.rarity === 'Unique') && it.base && it.base !== it.name;
     const title = twoLines ? `${esc(it.name)}<br>${esc(it.base)}` : esc(it.name || it.base || 'Objeto');
-    const mods = (it.mods || it.stats || [])
-      .map((m) => (typeof m === 'string' ? m : m && typeof m === 'object' ? String(m.name || m.text || '') : ''))
-      .filter(Boolean)
-      .map((m) => `<div class="tip-mod">${esc(m)}</div>`)
-      .join('');
-    return `<div class="tip materialize" data-r="${r}"><div class="tip-head"><div class="tip-name">${title}</div></div><div class="tip-body">
-      ${it.itemLevel ? `<div class="tip-meta">Nivel de objeto: ${esc(it.itemLevel)}</div><div class="tip-sep"></div>` : ''}
-      ${mods || '<div class="tip-meta">Este objeto no trae modificadores (monedas, fragmentos y algunas bases no los tienen).</div>'}
-      ${it.corrupted ? '<div class="tip-sep"></div><div class="tip-corrupt">Corrompido</div>' : ''}</div></div>`;
+    const blocks = [];
+    const block = (arr, cls) => {
+      const h = (arr || []).map(txtOf).filter(Boolean).map((x) => `<div class="${cls}">${esc(x)}</div>`).join('');
+      if (h) blocks.push(h);
+    };
+    const d = it.detail;
+    if (d) {
+      block(d.properties, 'tip-meta');
+      block([...(d.requirements || []), ...(d.sockets || [])], 'tip-meta');
+      if (d.itemLevel) blocks.push(`<div class="tip-meta">Nivel de objeto: ${esc(d.itemLevel)}</div>`);
+      block(d.implicits, 'tip-mod');
+      block(d.mods, 'tip-mod');
+      block(d.descr, 'tip-meta');
+      block(d.flavour, 'tip-flavour');
+      if (d.unidentified) blocks.push('<div class="tip-meta">Sin identificar</div>');
+      if (d.corrupted) blocks.push('<div class="tip-corrupt">Corrompido</div>');
+    } else {
+      if (it.itemLevel) blocks.push(`<div class="tip-meta">Nivel de objeto: ${esc(it.itemLevel)}</div>`);
+      block(it.mods || it.stats, 'tip-mod');
+      if (it.corrupted) blocks.push('<div class="tip-corrupt">Corrompido</div>');
+    }
+    const body = blocks.length ? blocks.join('<div class="tip-sep"></div>') : '<div class="tip-meta">El mercado no manda más datos de este objeto.</div>';
+    return `<div class="tip materialize" data-r="${r}"><div class="tip-head"><div class="tip-name">${title}</div></div><div class="tip-body">${body}</div></div>`;
   }
 
   function lineChart(points, opts) {
@@ -552,16 +570,20 @@
       (d) => ($('[data-new]', d).onsubmit = createShop));
   }
 
+  // El mismo texto que saldría al copiar el objeto en el juego (Ctrl+C), para que la IA
+  // vea también el daño, el crítico y los requisitos, no solo los afijos.
   function itemToText(l) {
-    return [
-      `Rarity: ${l.rarity || 'Rare'}`,
-      l.name,
-      l.base_type && l.base_type !== l.name ? l.base_type : null,
-      '--------',
-      l.item_level ? `Item Level: ${l.item_level}` : null,
-      ...(l.stats || []),
-      l.corrupted ? 'Corrupted' : null,
-    ].filter(Boolean).join('\n');
+    const d = l.detail || {};
+    const out = [`Rarity: ${l.rarity || 'Rare'}`, l.name];
+    if (l.base_type && l.base_type !== l.name) out.push(l.base_type);
+    const part = (arr) => { const xs = (arr || []).map(txtOf).filter(Boolean); if (xs.length) out.push('--------', ...xs); };
+    part(d.properties);
+    part(d.requirements);
+    if (l.item_level) out.push('--------', `Item Level: ${l.item_level}`);
+    part(d.implicits);
+    part((d.mods && d.mods.length ? d.mods : l.stats) || []);
+    if (l.corrupted) out.push('--------', 'Corrupted');
+    return out.filter(Boolean).join('\n');
   }
 
   function reviewBlock(l, rates) {

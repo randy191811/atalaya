@@ -26,6 +26,10 @@ const entry = (id, it) => {
   if (it.ilvl) item.ilvl = it.ilvl;
   if (it.corrupted) item.corrupted = true;
   if (it.properties) item.properties = it.properties;
+  if (it.requirements) item.requirements = it.requirements;
+  if (it.flavourText) item.flavourText = it.flavourText;
+  if (it.descrText) item.descrText = it.descrText;
+  if (it.implicitMods) item.implicitMods = it.implicitMods;
   if (it.extendedMods) item.extended = { mods: it.extendedMods };
   item[it.modsField || 'explicitMods'] = it.mods || [];
   return {

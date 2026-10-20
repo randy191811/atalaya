@@ -183,6 +183,7 @@ details[open] > summary::before { transform: rotate(45deg); }
 .tip-mod { color: var(--mod); }
 .tip-meta { color: #a49d8c; }
 .tip-corrupt { color: #e04444; }
+.tip-flavour { color: #b79a6b; font-style: italic; }
 
 /* Materialización: aparece de abajo arriba con un barrido de luz */
 .materialize { animation: materialize .75s var(--ease) both; }

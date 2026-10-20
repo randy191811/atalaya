@@ -5,12 +5,23 @@ import { request } from './queue.js';
 
 const league = (l) => encodeURIComponent(l || config.defaultLeague);
 
+// El mercado manda el texto con el marcado interno del juego: "[Mace|One Hand Mace]" se
+// enseña como «One Hand Mace» y "[Physical] Damage" como «Physical Damage». Sin esto, la
+// ficha sale llena de corchetes y barras.
+export function cleanMarkup(s) {
+  return String(s == null ? '' : s)
+    .replace(/\[([^[\]|]*)\|([^[\]]*)\]/g, '$2')
+    .replace(/\[([^[\]]*)\]/g, '$1')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
 // Cada mod puede llegar como texto plano ("+30 to maximum Mana") o, según el objeto,
 // como {name:...} / {text:...}. Siempre lo pasamos a texto legible.
 function modText(m) {
-  if (typeof m === 'string') return m.trim() || null;
+  if (typeof m === 'string') return cleanMarkup(m) || null;
   if (typeof m === 'number') return String(m);
-  if (m && typeof m === 'object') return String(m.name || m.text || m.mod || m.display || m.value || '').trim() || null;
+  if (m && typeof m === 'object') return cleanMarkup(m.name || m.text || m.mod || m.display || m.value || '') || null;
   return null;
 }
 
@@ -31,17 +42,24 @@ const NOT_MODS = new Set([
   'socketedItems', 'influences', 'hashes', 'extended', 'incubatedItem', 'ultimatumMods',
 ]);
 
-// "Monster Level: 79", "Quality: +20%"… el formato de propiedades del mercado es
-// { name, values: [[valor, tipo]] }.
-function propText(p) {
+// Propiedades y requisitos: { name, values: [[valor, tipo]], displayMode }.
+// displayMode dice cómo los coloca el juego:
+//   0 → «Nombre: valor»   1 → «valor Nombre» (ej. «98 Str»)
+//   2 → barra, se trata como 0   3 → el valor va dentro del nombre, en %0, %1…
+export function propText(p) {
   if (!p || typeof p !== 'object') return null;
-  const name = String(p.name || '').trim();
-  const vals = Array.isArray(p.values) ? p.values.map((v) => (Array.isArray(v) ? v[0] : v)).filter((v) => v != null && v !== '') : [];
+  const name = cleanMarkup(p.name);
+  const vals = Array.isArray(p.values)
+    ? p.values.map((v) => cleanMarkup(Array.isArray(v) ? v[0] : v)).filter((v) => v !== '')
+    : [];
   if (!name && !vals.length) return null;
   if (!vals.length) return name || null;
-  // Algunas propiedades traen el hueco %0 dentro del propio nombre.
-  if (/%\d/.test(name)) return name.replace(/%(\d)/g, (_, i) => String(vals[Number(i)] ?? ''));
-  return name ? `${name}: ${vals.join(', ')}` : vals.join(', ');
+  if (Number(p.displayMode) === 3 || /%\d/.test(name)) {
+    return name.replace(/%(\d)/g, (_, i) => String(vals[Number(i)] ?? '')).trim();
+  }
+  if (!name) return vals.join(', ');
+  if (Number(p.displayMode) === 1) return `${vals.join(', ')} ${name}`;
+  return `${name}: ${vals.join(', ')}`;
 }
 
 // Diccionario de estadísticas del mercado: convierte un identificador como
@@ -105,14 +123,15 @@ export function needsStatsDict(entry) {
   return !tieneTexto && tieneExtendido;
 }
 
-// Reúne TODO el texto del objeto, pase lo que pase con el nombre de los campos.
-// Se devuelve en el orden del juego: primero lo de la base, luego lo propio del objeto.
-export function collectMods(it) {
+// Los modificadores, separados en los dos bloques que enseña el juego:
+// `imp` = lo que trae la base (implícitos, runas, encantamientos, habilidad concedida)
+// `exp` = lo que le tocó al objeto (los afijos).
+export function collectModGroups(it) {
   const imp = [];
   const exp = [];
   const into = (arr) => (v) => {
     const t = modText(v);
-    if (t && !arr.includes(t) && !imp.includes(t) && !exp.includes(t)) arr.push(t);
+    if (t && !imp.includes(t) && !exp.includes(t)) arr.push(t);
   };
 
   for (const k of IMPLICIT_FIELDS) if (Array.isArray(it[k])) it[k].forEach(into(imp));
@@ -129,14 +148,53 @@ export function collectMods(it) {
   // el bloque extendido. Esto es lo que rescata los modificadores de los raros.
   if (!exp.length) extendedGroup(it, ['explicit', 'crafted', 'fractured', 'veiled', 'desecrated']).forEach(into(exp));
   if (!imp.length) extendedGroup(it, ['implicit', 'enchant', 'rune', 'scourge']).forEach(into(imp));
+  return { imp, exp };
+}
 
-  // Y si de verdad no hay ningún modificador (tabletas, monedas, gemas…), se usan sus
-  // propiedades y su descripción para no dejar la ficha en blanco.
+// Reúne TODO el texto del objeto, pase lo que pase con el nombre de los campos.
+// Se devuelve en el orden del juego: primero lo de la base, luego lo propio del objeto.
+export function collectMods(it) {
+  const { imp, exp } = collectModGroups(it);
+  // Si de verdad no hay ningún modificador (tabletas, monedas, gemas…), se usan sus
+  // propiedades y su descripción para no dejar la lista en blanco.
   if (!imp.length && !exp.length) {
-    if (Array.isArray(it.properties)) it.properties.forEach((p) => into(exp)(propText(p)));
-    for (const k of ['descrText', 'secDescrText']) if (typeof it[k] === 'string') into(exp)(it[k]);
+    const otros = [];
+    if (Array.isArray(it.properties)) for (const p of it.properties) { const t = propText(p); if (t && !otros.includes(t)) otros.push(t); }
+    for (const k of ['descrText', 'secDescrText']) { const t = cleanMarkup(it[k]); if (t && !otros.includes(t)) otros.push(t); }
+    return otros;
   }
   return [...imp, ...exp];
+}
+
+// La ficha completa, con los mismos bloques y en el mismo orden que el juego.
+// Lo que no tenga el objeto se devuelve como lista vacía.
+export function itemDetail(it) {
+  if (!it || typeof it !== 'object') return null;
+  const lines = (arr, fn) => {
+    const out = [];
+    for (const x of Array.isArray(arr) ? arr : []) {
+      const t = fn(x);
+      if (t && !out.includes(t)) out.push(t);
+    }
+    return out;
+  };
+  const { imp, exp } = collectModGroups(it);
+  const req = lines(it.requirements, propText);
+  const sockets = Array.isArray(it.sockets) ? it.sockets.length : 0;
+  const descr = [];
+  for (const k of ['descrText', 'secDescrText']) { const t = cleanMarkup(it[k]); if (t && !descr.includes(t)) descr.push(t); }
+  return {
+    properties: lines(it.properties, propText),
+    requirements: req.length ? [`Requiere ${req.join(', ')}`] : [],
+    sockets: sockets ? [`${sockets} ${sockets === 1 ? 'engarce' : 'engarces'}`] : [],
+    itemLevel: Number(it.ilvl || it.itemLevel) || null,
+    implicits: imp,
+    mods: exp,
+    descr,
+    flavour: lines(it.flavourText, cleanMarkup),
+    corrupted: !!it.corrupted,
+    unidentified: it.identified === false,
+  };
 }
 
 // Resumen en claro de qué trae un objeto del mercado. Sirve para ver de un vistazo,
@@ -171,6 +229,7 @@ export function normalizeEntry(entry) {
     icon: typeof it.icon === 'string' && /^https:\/\//.test(it.icon) ? it.icon : null,
     item_level: Number(it.ilvl || it.itemLevel) || null,
     corrupted: it.corrupted ? 1 : 0,
+    detail: itemDetail(it),
     price_amount: l.price && isFinite(Number(l.price.amount)) ? Number(l.price.amount) : null,
     price_currency: l.price ? String(l.price.currency || '') : null,
     stash_tab: l.stash && l.stash.name ? String(l.stash.name) : null,

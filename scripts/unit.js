@@ -90,6 +90,41 @@ ok(conDicc.length === 3 && conDicc[0] === 'Grants Skill: Level 18 Spellslinger' 
   'con el diccionario se escriben las características completas, implícito primero');
 setStatsDict(null);
 ok(inventoryOf(varita).includes('implicitMods[1]') && inventoryOf(varita).includes('extended.mods.explicit[2]'), 'el resumen dice qué campos manda el mercado');
+
+// La ficha completa: el mercado manda el texto con el marcado interno del juego.
+const { cleanMarkup, propText, itemDetail } = await import('../src/worker/trade2.js');
+ok(cleanMarkup('[Mace|One Hand Mace]') === 'One Hand Mace' && cleanMarkup('[Physical] Damage') === 'Physical Damage'
+  && cleanMarkup('[Critical|Critical Hit] Chance') === 'Critical Hit Chance' && cleanMarkup('+10 a la vida') === '+10 a la vida',
+  'quita el marcado interno del juego ([A|B] → B, [A] → A)');
+ok(propText({ name: '[Physical] Damage', values: [['65-79', 0]] }) === 'Physical Damage: 65-79', 'propiedad normal: «Nombre: valor»');
+ok(propText({ name: 'Str', values: [['98', 0]], displayMode: 1 }) === '98 Str', 'requisito con el valor delante');
+ok(propText({ name: 'Calidad %0', values: [['+20%', 0]], displayMode: 3 }) === 'Calidad +20%', 'el valor va dentro del nombre');
+
+const maza = {
+  name: 'Torment Burst', baseType: 'Structured Hammer', rarity: 'Rare', ilvl: 67, corrupted: true,
+  properties: [
+    { name: '[Mace|One Hand Mace]', values: [] },
+    { name: '[Physical] Damage', values: [['65-79', 1]] },
+    { name: 'Attacks per Second', values: [['1.40', 0]] },
+  ],
+  requirements: [{ name: 'Level', values: [['45', 0]], displayMode: 0 }, { name: 'Str', values: [['98', 0]], displayMode: 1 }],
+  implicitMods: ['+15 to Strength'],
+  explicitMods: ['+120 to maximum Life', '35% increased Physical Damage'],
+  flavourText: ['Lo que cae, cae entero.'],
+};
+const fichaMaza = itemDetail(maza);
+ok(fichaMaza.properties.length === 3 && fichaMaza.properties[0] === 'One Hand Mace' && fichaMaza.properties[1] === 'Physical Damage: 65-79',
+  'la ficha trae las propiedades (daño, ataques por segundo…) ya legibles');
+ok(fichaMaza.requirements[0] === 'Requiere Level: 45, 98 Str', 'y los requisitos en una línea');
+ok(fichaMaza.implicits.length === 1 && fichaMaza.mods.length === 2 && fichaMaza.itemLevel === 67 && fichaMaza.corrupted === true,
+  'implícitos y afijos van separados, con nivel de objeto y corrupción');
+ok(fichaMaza.flavour[0] === 'Lo que cae, cae entero.', 'y el texto de sabor de los únicos');
+
+const joya = { name: 'Rubí', baseType: 'Time-Lost Ruby', rarity: 'Rare', explicitMods: ['+12% a la vida'], descrText: 'Colócala en un engarce de joya asignado.' };
+const fichaJoya = itemDetail(joya);
+ok(fichaJoya.mods.length === 1 && fichaJoya.descr[0] === 'Colócala en un engarce de joya asignado.',
+  'una joya muestra sus modificadores Y cómo se usa, no solo una de las dos cosas');
+ok(itemDetail({ identified: false, baseType: 'Dueling Wand' }).unidentified === true, 'marca los objetos sin identificar');
 const norm = normalizeEntry({ id: 'x1', item: { name: 'Objeto', baseType: 'Base', rarity: 'Unique', ilvl: 81, corrupted: true, explicitMods: ['+1 a todo'] }, listing: { price: { amount: 3, currency: 'divine' } } });
 ok(norm.item_level === 81 && norm.corrupted === 1 && norm.stats[0] === '+1 a todo' && norm.price_amount === 3, 'normaliza nivel de objeto, corrupción, precio y modificadores');
 ok(normalizeEntry({ id: 'x2', item: { name: 'A' } }).stats.length === 0 && normalizeEntry({ id: 'x3' }) === null, 'un objeto sin datos no revienta la lectura');

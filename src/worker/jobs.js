@@ -71,8 +71,8 @@ export async function checkShop(shopId) {
         const match = added.find((a) => !claimed.has(a.key) && a.fp === m.item_fp);
         if (match) {
           claimed.add(match.key);
-          db.prepare('UPDATE listings SET listing_key=?, price_amount=?, price_currency=?, last_seen_at=?, stash_tab=?, icon=COALESCE(?, icon), item_level=COALESCE(?, item_level), corrupted=? WHERE id=?')
-            .run(match.key, match.price_amount, match.price_currency, t, match.stash_tab, match.icon, match.item_level, match.corrupted ? 1 : 0, m.id);
+          db.prepare('UPDATE listings SET listing_key=?, price_amount=?, price_currency=?, last_seen_at=?, stash_tab=?, icon=COALESCE(?, icon), item_level=COALESCE(?, item_level), corrupted=?, detail_json=COALESCE(?, detail_json) WHERE id=?')
+            .run(match.key, match.price_amount, match.price_currency, t, match.stash_tab, match.icon, match.item_level, match.corrupted ? 1 : 0, match.detail ? JSON.stringify(match.detail) : null, m.id);
           db.prepare('DELETE FROM sale_pending WHERE shop_id=? AND listing_key=?').run(shopId, m.listing_key);
           reprices++;
           continue;
@@ -98,13 +98,13 @@ export async function checkShop(shopId) {
       for (const i of items) {
         if (claimed.has(i.key)) continue;
         if (prevByKey.has(i.key)) {
-          db.prepare('UPDATE listings SET name=?, base_type=?, rarity=?, icon=?, price_amount=?, price_currency=?, stats_json=?, item_fp=?, last_seen_at=?, stash_tab=?, item_level=?, corrupted=? WHERE shop_id=? AND listing_key=?')
-            .run(i.name, i.base_type, i.rarity, i.icon, i.price_amount, i.price_currency, JSON.stringify(i.stats), i.fp, t, i.stash_tab, i.item_level, i.corrupted ? 1 : 0, shopId, i.key);
+          db.prepare('UPDATE listings SET name=?, base_type=?, rarity=?, icon=?, price_amount=?, price_currency=?, stats_json=?, detail_json=?, item_fp=?, last_seen_at=?, stash_tab=?, item_level=?, corrupted=? WHERE shop_id=? AND listing_key=?')
+            .run(i.name, i.base_type, i.rarity, i.icon, i.price_amount, i.price_currency, JSON.stringify(i.stats), JSON.stringify(i.detail), i.fp, t, i.stash_tab, i.item_level, i.corrupted ? 1 : 0, shopId, i.key);
           db.prepare('DELETE FROM sale_pending WHERE shop_id=? AND listing_key=?').run(shopId, i.key);
         } else {
           db.prepare(
-            'INSERT INTO listings (shop_id, user_id, listing_key, item_fp, name, base_type, rarity, icon, price_amount, price_currency, stats_json, stash_tab, item_level, corrupted, first_seen_at, last_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-          ).run(shopId, shop.user_id, i.key, i.fp, i.name, i.base_type, i.rarity, i.icon, i.price_amount, i.price_currency, JSON.stringify(i.stats), i.stash_tab, i.item_level, i.corrupted ? 1 : 0, t, t);
+            'INSERT INTO listings (shop_id, user_id, listing_key, item_fp, name, base_type, rarity, icon, price_amount, price_currency, stats_json, detail_json, stash_tab, item_level, corrupted, first_seen_at, last_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+          ).run(shopId, shop.user_id, i.key, i.fp, i.name, i.base_type, i.rarity, i.icon, i.price_amount, i.price_currency, JSON.stringify(i.stats), JSON.stringify(i.detail), i.stash_tab, i.item_level, i.corrupted ? 1 : 0, t, t);
         }
       }
 

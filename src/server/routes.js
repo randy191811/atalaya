@@ -109,8 +109,11 @@ function shopView(shop, plan, rates) {
   const reviews = new Map(db.prepare('SELECT * FROM listing_reviews WHERE shop_id = ?').all(shop.id).map((x) => [x.item_fp, x]));
   const listings = db.prepare('SELECT * FROM listings WHERE shop_id = ? ORDER BY first_seen_at DESC').all(shop.id).map((r) => {
     let stats = [];
+    let detail = null;
     try { stats = JSON.parse(r.stats_json || '[]'); } catch {}
+    try { detail = JSON.parse(r.detail_json || 'null'); } catch {}
     return {
+      detail,
       review: reviewView(reviews.get(r.item_fp), rates, toExalted(r.price_amount, r.price_currency, rates)),
       id: r.id, name: r.name, base_type: r.base_type, rarity: r.rarity, icon: r.icon, stash_tab: r.stash_tab,
       price_amount: r.price_amount, price_currency: r.price_currency, ex: toExalted(r.price_amount, r.price_currency, rates),
