@@ -155,37 +155,46 @@ details[open] > summary::before { transform: rotate(45deg); }
   font: 600 .74rem/1.3 var(--tech); letter-spacing: .06em; white-space: nowrap;
 }
 
-/* ---------- la ficha del objeto (estilo del juego, con marco ornamental) */
+/* ---------- la ficha del objeto: réplica del marco que enseña el juego.
+   Colores oficiales de rareza, doble marco recto, sin esquinas redondeadas.
+   --rc = color de la rareza (nombre y marco interior); --rc-dim = el marco exterior. */
 .tip {
-  position: relative; width: 100%; max-width: 390px; background: #0a090c;
-  border: 1px solid #5a4424; text-align: center; font-family: var(--serif); color: #7f7f7f;
-  box-shadow: 0 0 0 1px #000, 0 0 40px -10px rgba(198, 122, 60, .45), 0 30px 60px -20px rgba(0, 0, 0, .9);
+  --rc: #c8c8c8; --rc-dim: #5a5a5a;
+  position: relative; width: 100%; max-width: 332px; margin: 0 auto; border-radius: 0;
+  background: rgba(0, 0, 0, .85);
+  border: 1px solid var(--rc-dim);
+  box-shadow: 0 0 0 2px #000, 0 0 0 3px var(--rc-dim), 0 24px 50px -24px #000;
+  text-align: center; color: #7f7f7f;
+  font-family: "Fontin", "Fontin SmallCaps", var(--serif);
 }
-.tip::before, .tip::after {
-  content: ""; position: absolute; width: 18px; height: 18px; pointer-events: none;
-  border: 2px solid var(--coin); filter: drop-shadow(0 0 4px rgba(232, 194, 122, .7));
+.tip[data-r="Magic"] { --rc: #8888ff; --rc-dim: #3b3b7a; }
+.tip[data-r="Rare"] { --rc: #ffff77; --rc-dim: #6b6b2e; }
+.tip[data-r="Unique"] { --rc: #da9b4e; --rc-dim: #af6025; }
+.tip-head {
+  padding: .5rem .9rem .45rem; border-bottom: 1px solid var(--rc-dim);
+  background: color-mix(in srgb, var(--rc) 13%, transparent);
 }
-.tip::before { top: -5px; left: -5px; border-right: 0; border-bottom: 0; }
-.tip::after { bottom: -5px; right: -5px; border-left: 0; border-top: 0; }
-.tip-head { padding: .6rem 1rem .55rem; border-bottom: 1px solid #5a4424; background: linear-gradient(#3d2614, #22150b); }
-.tip[data-r="Rare"] { border-color: #625824; box-shadow: 0 0 0 1px #000, 0 0 40px -10px rgba(226, 205, 95, .4), 0 30px 60px -20px rgba(0, 0, 0, .9); }
-.tip[data-r="Rare"] .tip-head { background: linear-gradient(#3e3818, #221f0b); border-color: #625824; }
-.tip[data-r="Magic"] { border-color: #383868; box-shadow: 0 0 0 1px #000, 0 0 40px -10px rgba(143, 143, 255, .45), 0 30px 60px -20px rgba(0, 0, 0, .9); }
-.tip[data-r="Magic"] .tip-head { background: linear-gradient(#232345, #12122a); border-color: #383868; }
-.tip[data-r="Normal"], .tip[data-r="Currency"], .tip[data-r="Gem"] { border-color: #4a4a4a; }
-.tip[data-r="Normal"] .tip-head, .tip[data-r="Currency"] .tip-head, .tip[data-r="Gem"] .tip-head { background: linear-gradient(#2c2c2c, #181818); border-color: #4a4a4a; }
-.tip-name { font-size: 1.14rem; line-height: 1.25; color: var(--unique); text-shadow: 0 0 12px rgba(208, 129, 63, .35); }
-.tip[data-r="Rare"] .tip-name { color: var(--rare); text-shadow: 0 0 12px rgba(226, 205, 95, .3); }
-.tip[data-r="Magic"] .tip-name { color: var(--magic); text-shadow: 0 0 12px rgba(143, 143, 255, .35); }
-.tip[data-r="Normal"] .tip-name, .tip[data-r="Currency"] .tip-name, .tip[data-r="Gem"] .tip-name { color: var(--normal); text-shadow: none; }
-.tip-body { padding: .75rem 1rem .95rem; font-size: .96rem; line-height: 1.5; }
-.tip-sep { height: 1px; margin: .55rem auto; width: 72%; background: linear-gradient(90deg, transparent, #7a6236, transparent); }
-.tip-mod { color: var(--mod); }
-.tip-meta { color: #a49d8c; }
-.tip-corrupt { color: #e04444; }
-.tip-flavour { color: #b79a6b; font-style: italic; }
-.tip-prop { color: #8c8577; }
-.tip-prop b { color: #dcd3c2; font-weight: 500; }
+.tip-name { font-size: 1.1rem; line-height: 1.3; color: var(--rc); font-variant: small-caps; letter-spacing: .04em; }
+.tip-ico { padding: .65rem 0 .1rem; }
+.tip-ico img { display: block; margin: 0 auto; max-width: 100%; max-height: 104px; width: auto; }
+.tip-body { padding: .6rem .9rem .8rem; font-size: .95rem; line-height: 1.45; }
+/* Separador ornamental: línea fina con un rombo en el centro, como en el juego. */
+.tip-sep { position: relative; height: 9px; margin: .5rem auto; width: 88%; }
+.tip-sep::before {
+  content: ""; position: absolute; top: 4px; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--rc-dim) 16%, var(--rc-dim) 84%, transparent);
+}
+.tip-sep::after {
+  content: ""; position: absolute; top: 1px; left: 50%; width: 7px; height: 7px; margin-left: -3.5px;
+  transform: rotate(45deg); background: #060608; border: 1px solid var(--rc-dim);
+}
+.tip-mod { color: #8888ff; }
+.tip-meta { color: #7f7f7f; }
+.tip-meta b { color: #fff; font-weight: inherit; }
+.tip-corrupt { color: #d20000; }
+.tip-flavour { color: var(--rc); font-style: italic; }
+.tip-prop { color: #7f7f7f; }
+.tip-prop b { color: #fff; font-weight: inherit; }
 
 /* Materialización: aparece de abajo arriba con un barrido de luz */
 .materialize { animation: materialize .75s var(--ease) both; }

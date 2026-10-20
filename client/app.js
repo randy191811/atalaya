@@ -173,16 +173,19 @@
         ? `<div class="tip-prop">${esc(x.slice(0, i + 1))} <b>${esc(x.slice(i + 2))}</b></div>`
         : `<div class="tip-prop">${esc(x)}</div>`;
     };
+    // Los números van resaltados, como en el juego («Requiere: Level 31, 20 Str»).
+    const metaLine = (x) => `<div class="tip-meta">${esc(x).replace(/(\d[\d.,]*)/g, '<b>$1</b>')}</div>`;
     const block = (arr, cls) => {
       const xs = (arr || []).map(txtOf).filter(Boolean);
-      const h = cls === 'tip-prop' ? xs.map(propLine).join('') : xs.map((x) => `<div class="${cls}">${esc(x)}</div>`).join('');
+      const fn = cls === 'tip-prop' ? propLine : cls === 'tip-meta' ? metaLine : (x) => `<div class="${cls}">${esc(x)}</div>`;
+      const h = xs.map(fn).join('');
       if (h) blocks.push(h);
     };
     const d = it.detail;
     if (d) {
       block(d.properties, 'tip-prop');
       block([...(d.requirements || []), ...(d.sockets || [])], 'tip-meta');
-      if (d.itemLevel) blocks.push(`<div class="tip-meta">Nivel de objeto: ${esc(d.itemLevel)}</div>`);
+      if (d.itemLevel) block([`Nivel de objeto: ${d.itemLevel}`], 'tip-meta');
       block(d.granted, 'tip-mod');
       block(d.implicits, 'tip-mod');
       block(d.mods, 'tip-mod');
@@ -191,12 +194,14 @@
       if (d.unidentified) blocks.push('<div class="tip-meta">Sin identificar</div>');
       if (d.corrupted) blocks.push('<div class="tip-corrupt">Corrompido</div>');
     } else {
-      if (it.itemLevel) blocks.push(`<div class="tip-meta">Nivel de objeto: ${esc(it.itemLevel)}</div>`);
+      if (it.itemLevel) block([`Nivel de objeto: ${it.itemLevel}`], 'tip-meta');
       block(it.mods || it.stats, 'tip-mod');
       if (it.corrupted) blocks.push('<div class="tip-corrupt">Corrompido</div>');
     }
     const body = blocks.length ? blocks.join('<div class="tip-sep"></div>') : '<div class="tip-meta">El mercado no manda más datos de este objeto.</div>';
-    return `<div class="tip materialize" data-r="${r}"><div class="tip-head"><div class="tip-name">${title}</div></div><div class="tip-body">${body}</div></div>`;
+    // El icono es el oficial del juego (CDN de GGG), el mismo que sirve el mercado.
+    const ico = it.icon ? `<div class="tip-ico"><img src="${esc(it.icon)}" alt="" loading="lazy"></div>` : '';
+    return `<div class="tip materialize" data-r="${r}">${ico}<div class="tip-head"><div class="tip-name">${title}</div></div><div class="tip-body">${body}</div></div>`;
   }
 
   function lineChart(points, opts) {
