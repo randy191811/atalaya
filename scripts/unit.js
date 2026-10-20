@@ -49,8 +49,36 @@ ok(parseJson('```json\n{"a":1}\n```').a === 1 && parseJson('{"a":[1]} ]').a[0] =
 ok(validateAppraisal({ precio: { cantidad: -1, moneda: 'divine' } }) === null && validateAppraisal({ precio: { cantidad: 2, moneda: 'mirror' } }) === null, 'una tasación sin precio válido se descarta');
 ok(validateAppraisal({ precio: { cantidad: '3', moneda: 'Divine Orb' }, confianza: 'altísima' }).confianza === 'baja', 'normaliza moneda y confianza');
 
-const { verdictFor } = await import('../src/worker/reviews.js');
+const { verdictFor, verdictFrom } = await import('../src/worker/reviews.js');
 ok(verdictFor(900, [300, 320, 340, 400, 500]).verdict === 'caro' && verdictFor(330, [300, 320, 340, 400]).verdict === 'en_precio' && verdictFor(200, [300, 320, 340]).verdict === 'barato' && verdictFor(300, [310, 320]).verdict === 'sin_datos', 'revisor de precios: caro / en precio / barato / sin datos');
+ok(verdictFor(500, [100, 110, 120, 480, 500, 2000]).verdict === 'en_precio', 'la mediana sale de toda la muestra, no solo de los más baratos');
+ok(verdictFrom(null, 10, 20) === 'sin_datos' && verdictFrom(100, 0, 0) === 'sin_datos', 'sin mediana no hay veredicto');
+
+// Lectura de objetos del mercado: los modificadores deben leerse sea cual sea el campo que los traiga.
+const { collectMods, normalizeEntry, spreadSample } = await import('../src/worker/trade2.js');
+ok(collectMods({ explicitMods: ['+10 a la vida'] })[0] === '+10 a la vida', 'lee modificadores en texto plano');
+ok(collectMods({ explicitMods: [{ name: '+10 a la vida' }, { text: 'Resistencia al fuego 30 %' }] }).length === 2, 'lee modificadores que llegan como objeto');
+const orden = collectMods({ explicitMods: ['explícito'], implicitMods: ['implícito'], runeMods: ['runa'], enchantMods: ['encantamiento'] });
+ok(orden[0] === 'encantamiento' && orden[1] === 'implícito' && orden[2] === 'runa' && orden[3] === 'explícito', 'respeta el orden en que el juego los muestra');
+ok(collectMods({ desecratedMods: ['mod nuevo del juego'] })[0] === 'mod nuevo del juego', 'lee cualquier campo que acabe en Mods, aunque sea nuevo');
+ok(collectMods({ sanctumMods: ['inventado'] })[0] === 'inventado', 'un campo de modificadores desconocido también se lee');
+const tableta = collectMods({ properties: [{ name: 'Nivel de monstruo', values: [['79', 0]] }], descrText: 'Usar en un mapa' });
+ok(tableta.includes('Nivel de monstruo: 79') && tableta.includes('Usar en un mapa'), 'sin modificadores, usa propiedades y descripción (tabletas y monedas)');
+ok(collectMods({ explicitMods: ['+5 a la vida'], properties: [{ name: 'Calidad', values: [['+20%', 0]] }] }).length === 1, 'si ya hay modificadores, no añade propiedades de relleno');
+ok(collectMods({ extended: { mods: { explicit: [{ name: 'del bloque extendido' }] } } })[0] === 'del bloque extendido', 'último recurso: el bloque extendido');
+const norm = normalizeEntry({ id: 'x1', item: { name: 'Objeto', baseType: 'Base', rarity: 'Unique', ilvl: 81, corrupted: true, explicitMods: ['+1 a todo'] }, listing: { price: { amount: 3, currency: 'divine' } } });
+ok(norm.item_level === 81 && norm.corrupted === 1 && norm.stats[0] === '+1 a todo' && norm.price_amount === 3, 'normaliza nivel de objeto, corrupción, precio y modificadores');
+ok(normalizeEntry({ id: 'x2', item: { name: 'A' } }).stats.length === 0 && normalizeEntry({ id: 'x3' }) === null, 'un objeto sin datos no revienta la lectura');
+const diez = Array.from({ length: 100 }, (_, i) => 'id' + i);
+const muestra = spreadSample(diez, 10);
+const pos = muestra.map((x) => Number(x.slice(2)));
+ok(muestra.length === 10 && pos[0] === 0 && pos[1] === 1 && pos[2] === 2 && pos.every((v, i) => i === 0 || v > pos[i - 1]) && pos[9] >= 80,
+  'la muestra toma los más baratos y luego reparte por todo el rango hasta los caros');
+ok(spreadSample(['a', 'b'], 10).length === 2, 'con pocos anuncios se toman todos');
+
+// El mercado solo encuentra la cuenta si lleva el #número: se exige antes de guardarla.
+const accRe = /^[\p{L}\p{N}_\-. ]{2,30}#\d{1,6}$/u;
+ok(accRe.test('Randy#1234') && accRe.test('Mi Cuenta#99999') && !accRe.test('Randy') && !accRe.test('Randy#') && !accRe.test('#1234') && !accRe.test('Randy#12ab'), 'valida el nombre de cuenta con #número');
 
 console.log(`\nUNIT: ${pass} correctas, ${fail} fallidas`);
 fs.rmSync(process.env.DATA_DIR, { recursive: true, force: true });

@@ -47,8 +47,17 @@ export function parseItemText(raw) {
 
 const fmtPrice = (a, c) => (a == null ? 'sin precio' : `${a} ${canon(c) || c}`);
 
+// La liga en la que buscar comparables: la de la tienda del usuario. Si no tiene tienda,
+// la de la configuración. Tasar en «Standard» cuando el jugador está en la liga de temporada
+// daba precios que no se parecían en nada a los reales.
+export function userLeague(userId) {
+  const r = db.prepare('SELECT league FROM shops WHERE user_id = ? ORDER BY id LIMIT 1').get(userId);
+  return (r && r.league) || config.defaultLeague;
+}
+
 async function getComparables(item, league) {
-  if (!item || !item.base) return { status: 'skipped', list: [] };
+  // Basta con el nombre (únicos) o con la base (raros y mágicos).
+  if (!item || (!item.base && !item.name)) return { status: 'skipped', list: [] };
   try {
     const r = await searchComparables(item, league, 10);
     const rates = getRates();
@@ -205,7 +214,7 @@ export async function appraise(user, { kind, text, image, league }) {
       item = r.data;
       engineRead = r.engine;
     }
-    const comps = await getComparables(item, league || config.defaultLeague);
+    const comps = await getComparables(item, league || userLeague(user.id));
     const rates = getRates();
     const rawText = kind === 'texto' ? String(text) : itemAsText(item);
     const r = await askJson({ system: SYSTEM, prompt: appraisalPrompt(item, rawText, comps, rates), maxTokens: 1200, validate: validateAppraisal });

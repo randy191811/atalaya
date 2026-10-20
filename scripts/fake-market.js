@@ -9,14 +9,31 @@ const state = {
   rates: { exPerDiv: 640, exPerChaos: 0.02 * 50 }, // exalted por divine / por chaos
   mode: 'ok', // ok | 429 | 403 | empty
   retryAfter: 2,
+  leagues: ['Standard', 'Hardcore', 'Rise of the Abyssal'],
   calls: [], // {t, method, path, cookie}
 };
 
-const entry = (id, it) => ({
-  id,
-  listing: { price: it.price, account: { name: 'tester' }, stash: { name: it.stash || 'Tienda' }, indexed: new Date().toISOString() },
-  item: { name: it.name, typeLine: it.base || it.name, baseType: it.base || it.name, rarity: it.rarity || 'Rare', icon: it.icon || 'https://web.poecdn.com/gen/image/fake.png', explicitMods: it.mods || [] },
-});
+// `modsField` permite imitar que el mercado manda los modificadores en otro campo
+// (implicitMods, runeMods, uno nuevo…) y comprobar que se leen igual.
+const entry = (id, it) => {
+  const item = {
+    name: it.name,
+    typeLine: it.base || it.name,
+    baseType: it.base || it.name,
+    rarity: it.rarity || 'Rare',
+    icon: it.icon || 'https://web.poecdn.com/gen/image/fake.png',
+  };
+  if (it.ilvl) item.ilvl = it.ilvl;
+  if (it.corrupted) item.corrupted = true;
+  if (it.properties) item.properties = it.properties;
+  if (it.extendedMods) item.extended = { mods: it.extendedMods };
+  item[it.modsField || 'explicitMods'] = it.mods || [];
+  return {
+    id,
+    listing: { price: it.price, account: { name: 'tester' }, stash: { name: it.stash || 'Tienda' }, indexed: new Date().toISOString() },
+    item,
+  };
+};
 
 function json(res, status, obj, headers = {}) {
   res.writeHead(status, {
@@ -42,12 +59,14 @@ http
     if (p === '/__rates') { Object.assign(state.rates, await body(req)); return json(res, 200, state.rates); }
     if (p === '/__set') { const b = await body(req); state.shops[b.account] = b.items; return json(res, 200, { ok: true, n: b.items.length }); }
     if (p === '/__market') { const b = await body(req); state.market[b.name] = b.items; return json(res, 200, { ok: true }); }
+    if (p === '/__leagues') { const b = await body(req); state.leagues = b.leagues; return json(res, 200, { ok: true }); }
 
     state.calls.push({ t: Date.now(), method: req.method, path: p, cookie: req.headers.cookie || null, ua: req.headers['user-agent'] });
     if (state.mode === '429') return json(res, 429, { error: 'rate' }, { 'Retry-After': String(state.retryAfter) });
     if (state.mode === '403') return json(res, 403, { error: 'blocked' });
 
     if (p === '/data/leagues' && req.method === 'GET') {
+      if (state.mode === 'empty') return json(res, 200, { result: [] });
       return json(res, 200, { result: (state.leagues || ['Standard', 'Hardcore']).map((id) => ({ id, text: id })) });
     }
     let m;

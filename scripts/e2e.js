@@ -29,7 +29,7 @@ function spawnNode(args, env) {
 }
 const appEnv = {
   DATA_DIR: DATA, PORT: String(APP), MARKET_BASE: fake, MARKET_MIN_GAP_MS: '0', MARKET_LEARN_RATE: '0', MARKET_BACKOFF_BASE_SEC: '1',
-  ANTHROPIC_BASE: ai, GEMINI_BASE: ai, NO_WORKER: '1', MARKET_CONTACT: 'prueba@ejemplo.com', DEFAULT_LEAGUE: 'Liga Prueba',
+  ANTHROPIC_BASE: ai, GEMINI_BASE: ai, NO_WORKER: '1', MARKET_CONTACT: 'prueba@ejemplo.com', DEFAULT_LEAGUE: 'Standard',
   ANTHROPIC_API_KEY: '', GEMINI_API_KEY: '', BILLING_MODE: 'mock',
 };
 
@@ -84,7 +84,7 @@ try {
 
   section('[1] Arranque y portada');
   const h = await (await fetch(base + '/api/health')).json();
-  ok(h.ok && h.migrations === 2 && h.push === true && h.ai === false, 'servidor sano, IA sin clave todavía');
+  ok(h.ok && h.migrations === 3 && h.push === true && h.ai === false, 'servidor sano, IA sin clave todavía');
   const home = await fetch(base + '/');
   const html = await home.text();
   ok(home.status === 200 && /Tu tienda de Path of Exile 2/.test(html) && /Gratis, por ahora/.test(html), 'la portada se sirve con su contenido');
@@ -257,9 +257,51 @@ try {
   section('[9c] Prueba de conexión con el mercado');
   ok((await user('POST', '/api/admin/diagnostico')).status === 403, 'solo el administrador puede lanzarla');
   const dg = await admin('POST', '/api/admin/diagnostico');
-  ok(dg.status === 200 && dg.json.steps.length === 4, 'hace los 4 pasos (tienda, búsqueda, divine, chaos)');
-  ok(dg.json.steps[0].ok === false && /Añade primero tu tienda/.test(dg.json.steps[0].detail), 'sin tienda, lo explica en vez de fallar');
-  ok(dg.json.steps.slice(1).every((x) => x.ok) && /1 divine ≈/.test(dg.json.steps[2].detail), 'búsqueda y divisas funcionan contra el mercado');
+  ok(dg.status === 200 && dg.json.steps.length === 5, 'hace los 5 pasos (ligas, tienda, búsqueda, divine, chaos)');
+  ok(dg.json.steps[0].ok === true && /ligas/.test(dg.json.steps[0].detail), 'lee las ligas reales del juego');
+  ok(dg.json.steps[1].ok === false && /Añade primero tu tienda/.test(dg.json.steps[1].detail), 'sin tienda, lo explica en vez de fallar');
+  ok(dg.json.steps.slice(2).every((x) => x.ok) && /1 divine ≈/.test(dg.json.steps[3].detail), 'búsqueda y divisas funcionan contra el mercado');
+
+  section('[9d] Ligas de verdad, cuenta bien escrita y ficha completa del objeto');
+  const lg = await user('GET', '/api/ligas');
+  ok(lg.status === 200 && lg.json.leagues.includes('Rise of the Abyssal') && lg.json.suggested === 'Rise of the Abyssal',
+    'las ligas se leen del juego y propone la de temporada (no Standard)');
+  const malaCuenta = await other('POST', '/api/tiendas', { account: 'SinNumero', league: 'Liga Prueba' });
+  ok(malaCuenta.status === 400 && /almohadilla/.test(malaCuenta.json.error), 'una cuenta sin #número se rechaza explicando por qué');
+  ok((await user('PATCH', `/api/tiendas/${shopId}`, { account: 'otra mala' })).status === 400, 'tampoco se puede dejar mal al editarla');
+
+  // Modificadores en un campo distinto del habitual + nivel de objeto + corrupción.
+  await post(fake + '/__set', { account: 'Ana#1234', items: [
+    { id: 'R1', name: 'Anillo Raro', base: 'Sapphire Ring', price: { amount: 5, currency: 'divine' }, modsField: 'runeMods', mods: ['+15% a la velocidad de ataque'], ilvl: 82, corrupted: true },
+    { id: 'R2', name: 'Mythic Terraform', base: 'Expedition Tablet', rarity: 'Normal', price: { amount: 5, currency: 'divine' }, mods: [], properties: [{ name: 'Nivel de monstruo', values: [['79', 0]] }] },
+  ] });
+  await check(user, shopId);
+  let det = (await user('GET', '/api/tiendas')).json.shops[0].listings;
+  const anillo = det.find((l) => l.name === 'Anillo Raro');
+  const tablet = det.find((l) => l.name === 'Mythic Terraform');
+  ok(anillo && anillo.stats[0] === '+15% a la velocidad de ataque', 'lee los modificadores aunque vengan en otro campo del mercado');
+  ok(anillo && anillo.item_level === 82 && anillo.corrupted === true, 'guarda el nivel de objeto y la corrupción');
+  ok(tablet && tablet.stats.includes('Nivel de monstruo: 79'), 'un objeto sin modificadores muestra sus propiedades en vez de quedarse en blanco');
+
+  // Corregir la cuenta: se vacían los anuncios viejos y se lee la nueva.
+  await post(fake + '/__set', { account: 'Beto#4321', items: [{ id: 'B1', name: 'Objeto de Beto', base: 'Sapphire Ring', price: { amount: 1, currency: 'divine' } }] });
+  ok((await user('PATCH', `/api/tiendas/${shopId}`, { account: 'Beto#4321' })).status === 200, 'se puede corregir el nombre de la cuenta');
+  ok(sql('SELECT COUNT(*) n FROM listings WHERE shop_id = ?', shopId)[0].n === 0, 'al cambiar de cuenta se vacían los anuncios antiguos');
+  await check(user, shopId);
+  det = (await user('GET', '/api/tiendas')).json.shops[0];
+  ok(det.account === 'Beto#4321' && det.listings.length === 1 && det.listings[0].name === 'Objeto de Beto', 'y se lee la tienda de la cuenta nueva');
+
+  // El tasador busca comparables en la liga de la tienda, no en Standard.
+  await post(fake + '/__reset');
+  await user('POST', '/api/tasar', { kind: 'texto', text: ITEM_TEXT });
+  const rutas = (await get(fake + '/__stats')).calls.map((c) => c.path);
+  ok(rutas.some((p) => p === '/search/' + encodeURIComponent('Liga Prueba')) && !rutas.some((p) => p === '/search/Standard'),
+    'el tasador busca en la liga de tu tienda, no en Standard');
+
+  // Se deja la tienda como estaba para las secciones siguientes.
+  await user('PATCH', `/api/tiendas/${shopId}`, { account: 'Ana#1234' });
+  await post(fake + '/__set', { account: 'Ana#1234', items: [items[0]] });
+  await check(user, shopId);
 
   section('[10] Plan Mercader: varias tiendas y bajada de plan');
   await user('POST', '/api/checkout', { plan: 'mercader' });

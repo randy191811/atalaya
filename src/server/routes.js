@@ -14,9 +14,10 @@ import { hasAnyKey, keyStatus, detectProvider, validateKey, saveKey } from '../l
 import { appraise, TasadorError } from '../lib/tasador.js';
 import { queueStatus, isBlocked } from '../worker/queue.js';
 import { checkShop, checkWishes, isRunning, notifyUser, mainLeague } from '../worker/jobs.js';
-import { reviewListing } from '../worker/reviews.js';
+import { reviewListing, verdictFrom } from '../worker/reviews.js';
 import { runDiagnostic } from '../worker/diagnostico.js';
-import { listLeagues, debugRawShopItem } from '../worker/trade2.js';
+import { listLeagues, currentLeague, debugRawShopItem } from '../worker/trade2.js';
+import { MarketError } from '../worker/queue.js';
 
 export class HttpError extends Error {
   constructor(status, message, extra) {
@@ -59,7 +60,10 @@ const needUser = (req) => {
   return u;
 };
 const CURRENCIES = ['exalted', 'divine', 'chaos'];
-const accountRe = /^[\p{L}\p{N}_\-#. ]{2,40}$/u;
+// El mercado identifica la cuenta como «Nombre#1234»: sin el número no devuelve nada nunca,
+// así que se exige aquí en vez de dejar la tienda vacía para siempre sin explicación.
+const accountRe = /^[\p{L}\p{N}_\-. ]{2,30}#\d{1,6}$/u;
+const ACCOUNT_HELP = 'Escribe tu cuenta de Path of Exile con el número que va detrás de la almohadilla, tal como aparece en el mercado (por ejemplo Randy#1234).';
 const sum = (a) => a.reduce((x, y) => x + y, 0);
 
 // ---------- vistas
@@ -110,6 +114,7 @@ function shopView(shop, plan, rates) {
       review: reviewView(reviews.get(r.item_fp), rates, toExalted(r.price_amount, r.price_currency, rates)),
       id: r.id, name: r.name, base_type: r.base_type, rarity: r.rarity, icon: r.icon, stash_tab: r.stash_tab,
       price_amount: r.price_amount, price_currency: r.price_currency, ex: toExalted(r.price_amount, r.price_currency, rates),
+      item_level: r.item_level || null, corrupted: !!r.corrupted,
       stats, days: Math.max(0, Math.floor((t - r.first_seen_at) / 86400)),
     };
   });
@@ -138,7 +143,7 @@ function reviewView(r, rates, ownEx) {
   if (!r) return null;
   let verdict = r.verdict;
   if (verdict !== 'sin_datos' && ownEx != null && r.comp_median_ex > 0) {
-    verdict = ownEx > r.comp_median_ex * 1.25 ? 'caro' : ownEx < r.comp_min_ex * 0.85 ? 'barato' : 'en_precio';
+    verdict = verdictFrom(ownEx, r.comp_min_ex, r.comp_median_ex);
   }
   return { verdict, count: r.comp_count, minEx: r.comp_min_ex, medianEx: r.comp_median_ex, checkedAt: r.checked_at, suggested: verdict === 'caro' ? suggestPrice(r.comp_median_ex, rates) : null };
 }
@@ -203,11 +208,15 @@ export async function handleApi(req, res, url, send, setCookie) {
   }
   // Aviso de la pasarela de pago. En modo demo no hace nada (se rellenará al pasar a cobros reales).
   if (path === '/api/webhook' && m === 'POST') return send(200, { ok: true, mode: config.billingMode });
+  // Las ligas son información pública del juego: así el formulario ya las trae al entrar.
+  if (path === '/api/ligas' && m === 'GET') {
+    const leagues = await listLeagues();
+    return send(200, { leagues, suggested: await currentLeague(), default: config.defaultLeague });
+  }
 
   const u = needUser(req);
 
   if (path === '/api/yo' && m === 'GET') return send(200, meView(u));
-  if (path === '/api/ligas' && m === 'GET') return send(200, { leagues: await listLeagues(), default: config.defaultLeague });
 
   // ----- tiendas
   if (path === '/api/tiendas' && m === 'GET') {
@@ -223,9 +232,11 @@ export async function handleApi(req, res, url, send, setCookie) {
     const b = await readJson(req);
     const account = String(b.account || '').trim();
     const league = String(b.league || config.defaultLeague).trim().slice(0, 60);
-    if (!accountRe.test(account)) throw bad('Escribe el nombre de tu cuenta de Path of Exile tal como aparece en el mercado (por ejemplo Randy#1234).');
+    if (!accountRe.test(account)) throw bad(ACCOUNT_HELP);
+    if (league.length < 2) throw bad('Elige la liga en la que juegas.');
     if (db.prepare('SELECT 1 FROM shops WHERE user_id = ? AND lower(poe_account) = lower(?) AND league = ?').get(u.id, account, league)) throw bad('Ya vigilas esa tienda en esa liga.');
     const r = db.prepare('INSERT INTO shops (user_id, poe_account, league, created_at) VALUES (?,?,?,?)').run(u.id, account, league, now());
+    enforceShopLimit(u.id, plan);
     return send(201, { id: Number(r.lastInsertRowid) });
   }
   if ((mm = path.match(/^\/api\/tiendas\/(\d+)$/))) {
@@ -240,12 +251,30 @@ export async function handleApi(req, res, url, send, setCookie) {
     }
     if (m === 'PATCH') {
       const b = await readJson(req);
+      // Cambiar la cuenta o la liga deja los anuncios anteriores sin sentido: se vacían
+      // (las ventas ya apuntadas no se tocan) y la próxima lectura empieza de cero.
+      const resetListings = () => {
+        for (const tbl of ['listings', 'sale_pending']) db.prepare(`DELETE FROM ${tbl} WHERE shop_id = ?`).run(shop.id);
+      };
+      if (b.account !== undefined) {
+        const acc = String(b.account).trim();
+        if (!accountRe.test(acc)) throw bad(ACCOUNT_HELP);
+        if (acc.toLowerCase() !== shop.poe_account.toLowerCase()) {
+          if (db.prepare('SELECT 1 FROM shops WHERE user_id = ? AND id != ? AND lower(poe_account) = lower(?) AND league = ?').get(u.id, shop.id, acc, shop.league)) {
+            throw bad('Ya vigilas esa cuenta en esta liga.');
+          }
+          tx(() => {
+            db.prepare('UPDATE shops SET poe_account = ? WHERE id = ?').run(acc, shop.id);
+            resetListings();
+          });
+        }
+      }
       if (b.league !== undefined) {
         const lg = String(b.league).trim().slice(0, 60);
         if (lg.length < 2) throw bad('Escribe el nombre de la liga.');
         if (lg !== shop.league) tx(() => {
           db.prepare('UPDATE shops SET league = ? WHERE id = ?').run(lg, shop.id);
-          for (const tbl of ['listings', 'sale_pending']) db.prepare(`DELETE FROM ${tbl} WHERE shop_id = ?`).run(shop.id);
+          resetListings();
         });
       }
       if (b.session !== undefined) {
@@ -288,6 +317,14 @@ export async function handleApi(req, res, url, send, setCookie) {
       const rt = getRates();
       return send(200, { review: reviewView(row, rt, toExalted(l.price_amount, l.price_currency, rt)), count: r.count });
     } catch (e) {
+      // Cada motivo se cuenta tal cual, en vez de esconderlo todo tras el mismo mensaje.
+      if (e instanceof HttpError) throw e;
+      if (e instanceof MarketError) {
+        if (e.kind === 'rate_limited' || e.kind === 'blocked') throw new HttpError(429, 'El mercado oficial pidió una pausa. Se reanudará solo en unos minutos.');
+        if (e.kind === 'network') throw new HttpError(503, 'No se pudo conectar con el mercado oficial. Prueba en un rato.');
+        throw new HttpError(503, `El mercado no aceptó la consulta (${e.message}).`);
+      }
+      console.error('[comparar]', e && e.stack ? e.stack : e);
       throw new HttpError(503, 'No pude consultar el mercado ahora. Prueba en un rato.');
     }
   }
@@ -359,7 +396,8 @@ export async function handleApi(req, res, url, send, setCookie) {
         kind: b.kind === 'captura' ? 'captura' : 'texto',
         text: typeof b.text === 'string' ? b.text.slice(0, 6000) : '',
         image: b.image && typeof b.image === 'object' ? { mime: String(b.image.mime || ''), base64: String(b.image.base64 || '') } : null,
-        league: typeof b.league === 'string' ? b.league.slice(0, 60) : null,
+        // Sin liga explícita se usa la de su tienda (lo hace el propio tasador).
+        league: typeof b.league === 'string' && b.league.trim() ? b.league.trim().slice(0, 60) : null,
       });
       return send(200, { ...r, credits: creditsOf(u.id).credits });
     } catch (e) {

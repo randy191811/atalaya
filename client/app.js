@@ -167,7 +167,7 @@
       .join('');
     return `<div class="tip materialize" data-r="${r}"><div class="tip-head"><div class="tip-name">${title}</div></div><div class="tip-body">
       ${it.itemLevel ? `<div class="tip-meta">Nivel de objeto: ${esc(it.itemLevel)}</div><div class="tip-sep"></div>` : ''}
-      ${mods || '<div class="tip-meta">Sin modificadores leídos</div>'}
+      ${mods || '<div class="tip-meta">Este objeto no trae modificadores (monedas, fragmentos y algunas bases no los tienen).</div>'}
       ${it.corrupted ? '<div class="tip-sep"></div><div class="tip-corrupt">Corrompido</div>' : ''}</div></div>`;
   }
 
@@ -366,7 +366,6 @@
   };
 
   function renderTienda(view, data, first) {
-    ensureLeagues();
     if (!data.shops.length) return renderNoShop(view);
     if (!activeShop || !data.shops.find((s) => s.id === activeShop)) activeShop = data.shops[0].id;
     const shop = data.shops.find((s) => s.id === activeShop);
@@ -422,12 +421,16 @@
             <span class="nm">${esc(l.name)}</span><span class="pr num">${price(l.price_amount, l.price_currency)}</span>
           </button>`).join('')}</div>`
           : shop.listings.length ? `<div class="empty"><p>Ningún objeto en este filtro.</p></div>`
-          : `<div class="empty"><h3>${shop.health.state === 'never' ? 'Aún no hay lectura' : 'No hay objetos en venta'}</h3><p>${shop.health.state === 'never' ? 'La primera lectura tarda unos minutos. Puedes pulsar «Revisar ahora».' : 'Si tienes objetos a la venta y no salen aquí, revisa el nombre de cuenta y la liga, o añade tu código de sesión abajo.'}</p></div>`}
+          : `<div class="empty"><h3>${shop.health.state === 'never' ? 'Aún no hay lectura' : 'No hay objetos en venta'}</h3><p>${shop.health.state === 'never' ? 'La primera lectura tarda unos minutos. Puedes pulsar «Revisar ahora».' : 'Si tienes objetos a la venta y no salen aquí, lo más común es que la cuenta o la liga no coincidan: compruébalas en «Ajustes de esta tienda». Si están bien, añade ahí tu código de sesión.'}</p></div>`}
       </section>
       <details class="panel" data-settings-wrap ${settingsOpen ? 'open' : ''}><summary><strong>Ajustes de esta tienda</strong></summary>
         <form data-settings class="mt1">
           <div class="row">
-            <div class="field"><label for="st-league">Liga</label><input id="st-league" name="league" list="dl-ligas" value="${esc(shop.league)}"></div>
+            <div class="field"><label for="st-acc">Tu cuenta de Path of Exile</label><input id="st-acc" name="account" value="${esc(shop.account)}" autocomplete="off" spellcheck="false" pattern="[^#]{2,30}#[0-9]{3,6}" required>
+              <div class="small muted">Si la corriges, se vuelve a leer la tienda desde cero.</div></div>
+            ${leagueField('st-league', shop.league)}
+          </div>
+          <div class="row">
             <div class="field"><label for="st-big">Avisar como «gran venta» desde</label><input id="st-big" name="bigAmount" type="number" min="0" step="any" value="${shop.bigSale ? esc(shop.bigSale.amount) : ''}" placeholder="Opcional"></div>
             <div class="field"><label for="st-bigc">Moneda</label><select id="st-bigc" name="bigCurrency">${['divine', 'exalted', 'chaos'].map((c) => `<option ${shop.bigSale && shop.bigSale.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
           </div>
@@ -442,6 +445,7 @@
 
     if (!first) enhance(view);
     bindGuide(view);
+    ensureLeagues(); // rellena el desplegable de ligas de los ajustes ya pintados
     $('[data-settings-wrap]', view).addEventListener('toggle', (ev) => (settingsOpen = ev.target.open));
     $$('[data-shop]', view).forEach((b) => (b.onclick = () => { activeShop = Number(b.dataset.shop); reviewFilter = 'todos'; route(); }));
     $$('[data-rf]', view).forEach((b) => (b.onclick = () => { reviewFilter = b.dataset.rf; renderTienda(view, data, false); }));
@@ -464,7 +468,7 @@
     f.onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = new FormData(f);
-      const body = { league: fd.get('league') };
+      const body = { account: fd.get('account'), league: fd.get('league') };
       if (fd.get('session')) body.session = fd.get('session');
       body.bigSale = fd.get('bigAmount') ? { amount: Number(fd.get('bigAmount')), currency: fd.get('bigCurrency') } : null;
       try { await api('PATCH', `/api/tiendas/${shop.id}`, body); toast('Ajustes guardados.', 'ok'); route(); } catch (e) { toast(e.message, 'err'); }
@@ -478,21 +482,42 @@
   }
 
   let LEAGUES = null;
-  async function ensureLeagues() {
-    if (LEAGUES) return LEAGUES;
-    try { const r = await api('GET', '/api/ligas'); LEAGUES = r.leagues && r.leagues.length ? r.leagues : ['Standard', 'Hardcore']; }
-    catch { LEAGUES = ['Standard', 'Hardcore']; }
-    const dl = $('#dl-ligas');
-    if (dl) dl.innerHTML = LEAGUES.map((l) => `<option value="${esc(l)}">`).join('');
+  let LEAGUE_SUGGESTED = null;
+  // Rellena el desplegable de ligas con las de verdad y deja seleccionada la de temporada.
+  async function ensureLeagues(selectEl) {
+    if (!LEAGUES) {
+      try {
+        const r = await api('GET', '/api/ligas');
+        LEAGUES = r.leagues && r.leagues.length ? r.leagues : ['Standard', 'Hardcore'];
+        LEAGUE_SUGGESTED = r.suggested || r.default || LEAGUES[0];
+      } catch { LEAGUES = ['Standard', 'Hardcore']; LEAGUE_SUGGESTED = (me && me.defaultLeague) || 'Standard'; }
+    }
+    // El campo se pinta antes de que lleguen las ligas: se completan al llegar.
+    $$('select[data-leagues]').forEach((sel) => {
+      const keep = sel.dataset.value || sel.value;
+      const opts = LEAGUES.includes(keep) || !keep ? LEAGUES : [keep, ...LEAGUES];
+      sel.innerHTML = opts.map((l) => `<option value="${esc(l)}" ${l === (keep || LEAGUE_SUGGESTED) ? 'selected' : ''}>${esc(l)}</option>`).join('');
+    });
     return LEAGUES;
   }
 
+  // Lista de ligas real en lugar de un campo de texto libre: escribir mal la liga era
+  // la causa más común de «mi tienda sale vacía».
+  function leagueField(id, current) {
+    const val = current || '';
+    return `<div class="field"><label for="${id}">Liga</label>
+      <select id="${id}" name="league" data-leagues data-value="${esc(val)}" required>
+        ${val ? `<option value="${esc(val)}" selected>${esc(val)}</option>` : '<option value="">Cargando ligas…</option>'}
+      </select>
+      <div class="small muted">La liga en la que juegas. Se leen del propio juego.</div></div>`;
+  }
+
   function shopForm(prefix) {
-    ensureLeagues();
-    return `<div class="field"><label for="${prefix}-acc">Tu cuenta de Path of Exile</label><input id="${prefix}-acc" name="account" required placeholder="Por ejemplo Randy#1234" autocomplete="off">
-      <div class="small muted">Tal como aparece en el mercado, con el número tras la almohadilla.</div></div>
-      <div class="field"><label for="${prefix}-lg">Liga</label><input id="${prefix}-lg" name="league" list="dl-ligas" required value="${esc(me.defaultLeague)}">
-      <div class="small muted">Elige de la lista o escribe el nombre exacto como aparece en el juego.</div></div>`;
+    setTimeout(ensureLeagues, 0);
+    return `<div class="field"><label for="${prefix}-acc">Tu cuenta de Path of Exile</label>
+      <input id="${prefix}-acc" name="account" required placeholder="Randy#1234" autocomplete="off" spellcheck="false" pattern="[^#]{2,30}#[0-9]{3,6}">
+      <div class="small muted">Con el número que va detrás de la almohadilla. Lo ves en el juego arriba a la izquierda, o en cualquiera de tus anuncios del mercado.</div></div>
+      ${leagueField(prefix + '-lg', '')}`;
   }
 
   function renderNoShop(view) {
@@ -528,7 +553,15 @@
   }
 
   function itemToText(l) {
-    return [`Rarity: ${l.rarity || 'Rare'}`, l.name, l.base_type && l.base_type !== l.name ? l.base_type : null, '--------', ...(l.stats || [])].filter(Boolean).join('\n');
+    return [
+      `Rarity: ${l.rarity || 'Rare'}`,
+      l.name,
+      l.base_type && l.base_type !== l.name ? l.base_type : null,
+      '--------',
+      l.item_level ? `Item Level: ${l.item_level}` : null,
+      ...(l.stats || []),
+      l.corrupted ? 'Corrupted' : null,
+    ].filter(Boolean).join('\n');
   }
 
   function reviewBlock(l, rates) {
@@ -542,7 +575,7 @@
   }
 
   function itemDialog(shop, l, rates) {
-    openDialog(`<div class="result">${tooltipHtml({ ...l, base: l.base_type, mods: l.stats })}
+    openDialog(`<div class="result">${tooltipHtml({ ...l, base: l.base_type, mods: l.stats, itemLevel: l.item_level })}
       <div class="verdict"><div class="small muted">Lo tienes a la venta por</div><div class="verdict-price">${price(l.price_amount, l.price_currency)}</div>
       <div class="small muted">${l.ex != null ? '≈ ' + exFmt(l.ex, rates) + ' · ' : ''}${l.days ? `lleva ${l.days} días` : 'puesto hoy'}${l.stash_tab ? ' · pestaña ' + esc(l.stash_tab) : ''}</div></div>
       <div data-review>${reviewBlock(l, rates)}</div>

@@ -1,3 +1,5 @@
 node_modules/
 client/fonts/*.woff2
 client/fonts/*.ttf
+data/
+.env

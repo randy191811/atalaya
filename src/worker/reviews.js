@@ -7,23 +7,32 @@ import { MarketError } from './queue.js';
 
 export const REVIEW_TTL = 12 * 3600; // un anuncio se vuelve a comparar como mucho cada 12 h
 
-// Veredicto: caro si pide más de un 25 % sobre la mediana de los 5 más baratos; barato si pide menos del 85 % del más barato.
+// Un solo sitio decide el veredicto, para que la ficha y el guardado digan siempre lo mismo.
+// caro: pide más de un 30 % sobre la mediana del mercado. barato: por debajo del más barato.
+export function verdictFrom(ownEx, minEx, medianEx) {
+  if (ownEx == null || !(medianEx > 0)) return 'sin_datos';
+  if (ownEx > medianEx * 1.3) return 'caro';
+  if (minEx > 0 && ownEx < minEx * 0.9) return 'barato';
+  return 'en_precio';
+}
+
+// La mediana se saca de TODA la muestra (que ya viene repartida por el rango de precios),
+// no solo de los más baratos: si no, cualquier objeto decente parecería «caro».
 export function verdictFor(ownEx, compsEx) {
   const xs = compsEx.filter((x) => x > 0).sort((a, b) => a - b);
   if (ownEx == null || xs.length < 3) return { verdict: 'sin_datos', min: xs[0] ?? null, median: null };
-  const top = xs.slice(0, 5);
-  const median = top[Math.floor(top.length / 2)];
+  const median = xs[Math.floor(xs.length / 2)];
   const min = xs[0];
-  let verdict = 'en_precio';
-  if (ownEx > median * 1.25) verdict = 'caro';
-  else if (ownEx < min * 0.85) verdict = 'barato';
-  return { verdict, min, median };
+  return { verdict: verdictFrom(ownEx, min, median), min, median };
 }
 
 export async function reviewListing(listing, league) {
   const rates = getRates();
   const res = await searchComparables({ name: listing.name, base: listing.base_type, rarity: listing.rarity }, league, 10);
-  const comps = res.items.filter((i) => i.key !== listing.listing_key).map((i) => toExalted(i.price_amount, i.price_currency, rates)).filter((x) => x != null);
+  const comps = res.items
+    .filter((i) => i.key !== listing.listing_key && i.fp !== listing.item_fp) // nunca compararse contra sí mismo
+    .map((i) => toExalted(i.price_amount, i.price_currency, rates))
+    .filter((x) => x != null);
   const own = toExalted(listing.price_amount, listing.price_currency, rates);
   const v = verdictFor(own, comps);
   db.prepare(
