@@ -50,6 +50,19 @@ export async function fetchEntries(ids, queryId, cookie) {
   return out;
 }
 
+// Solo para depurar: trae 1 anuncio de la tienda SIN normalizar, tal cual lo manda el mercado.
+export async function debugRawShopItem(account, leagueName, cookie) {
+  const body = {
+    query: { status: { option: 'any' }, filters: { trade_filters: { filters: { account: { input: account } } } } },
+    sort: { price: 'asc' },
+  };
+  const s = await request('POST', `/search/${league(leagueName)}`, { body, cookie });
+  const id = ((s && s.result) || [])[0];
+  if (!id) return null;
+  const data = await request('GET', `/fetch/${id}?query=${encodeURIComponent(s.id)}`, { cookie });
+  return ((data && data.result) || [])[0] || null;
+}
+
 // Todos los anuncios de la tienda de una cuenta (hasta 100, el máximo que devuelve una búsqueda).
 export async function searchShop(account, leagueName, cookie) {
   const body = {

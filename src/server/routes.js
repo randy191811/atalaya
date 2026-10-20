@@ -6,7 +6,7 @@ import {
   registerUser, login, createSession, cookieHeader, clearCookieHeader, userFromRequest, destroySession,
   tooMany, verifyPassword, hashPassword,
 } from '../lib/auth.js';
-import { encrypt } from '../lib/secrets.js';
+import { encrypt, decrypt } from '../lib/secrets.js';
 import { PLANS, COSTS, planFor, publicPlans, renewIfDue, setPlanCredits, creditsOf } from '../lib/plans.js';
 import { getRates, toExalted, canon } from '../lib/money.js';
 import { vapidPublicKey, selfTest } from '../lib/webpush.js';
@@ -16,7 +16,7 @@ import { queueStatus, isBlocked } from '../worker/queue.js';
 import { checkShop, checkWishes, isRunning, notifyUser, mainLeague } from '../worker/jobs.js';
 import { reviewListing } from '../worker/reviews.js';
 import { runDiagnostic } from '../worker/diagnostico.js';
-import { listLeagues } from '../worker/trade2.js';
+import { listLeagues, debugRawShopItem } from '../worker/trade2.js';
 
 export class HttpError extends Error {
   constructor(status, message, extra) {
@@ -469,6 +469,13 @@ export async function handleApi(req, res, url, send, setCookie) {
       if (tooMany(`diag:${u.id}`, 4, 600)) throw new HttpError(429, 'Espera unos minutos entre pruebas para no saturar el mercado.');
       const shop = db.prepare('SELECT * FROM shops WHERE user_id = ? ORDER BY id LIMIT 1').get(u.id);
       return send(200, await runDiagnostic(shop));
+    }
+    if (path === '/api/admin/depurar-objeto' && m === 'GET') {
+      if (tooMany(`depurar:${u.id}`, 6, 600)) throw new HttpError(429, 'Espera unos minutos.');
+      const shop = db.prepare('SELECT * FROM shops WHERE user_id = ? ORDER BY id LIMIT 1').get(u.id);
+      if (!shop) throw bad('Añade primero una tienda.');
+      const raw = await debugRawShopItem(shop.poe_account, shop.league, decrypt(shop.poe_session_enc) || undefined);
+      return send(200, { raw });
     }
     if (path === '/api/admin/invitacion' && m === 'POST') {
       const token = crypto.randomBytes(18).toString('base64url');
