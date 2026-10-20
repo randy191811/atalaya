@@ -160,7 +160,11 @@
     const r = esc(it.rarity || 'Normal');
     const twoLines = (it.rarity === 'Rare' || it.rarity === 'Unique') && it.base && it.base !== it.name;
     const title = twoLines ? `${esc(it.name)}<br>${esc(it.base)}` : esc(it.name || it.base || 'Objeto');
-    const mods = (it.mods || it.stats || []).map((m) => `<div class="tip-mod">${esc(m)}</div>`).join('');
+    const mods = (it.mods || it.stats || [])
+      .map((m) => (typeof m === 'string' ? m : m && typeof m === 'object' ? String(m.name || m.text || '') : ''))
+      .filter(Boolean)
+      .map((m) => `<div class="tip-mod">${esc(m)}</div>`)
+      .join('');
     return `<div class="tip materialize" data-r="${r}"><div class="tip-head"><div class="tip-name">${title}</div></div><div class="tip-body">
       ${it.itemLevel ? `<div class="tip-meta">Nivel de objeto: ${esc(it.itemLevel)}</div><div class="tip-sep"></div>` : ''}
       ${mods || '<div class="tip-meta">Sin modificadores leídos</div>'}

@@ -5,13 +5,23 @@ import { request } from './queue.js';
 
 const league = (l) => encodeURIComponent(l || config.defaultLeague);
 
+// Cada mod puede llegar como texto plano ("+30 to maximum Mana") o, según el objeto,
+// como {name:...} / {text:...}. Siempre lo pasamos a texto legible.
+function modText(m) {
+  if (typeof m === 'string') return m;
+  if (m && typeof m === 'object') return String(m.name || m.text || m.mod || m.display || '').trim() || null;
+  return null;
+}
+
 export function normalizeEntry(entry) {
   if (!entry || !entry.item) return null;
   const it = entry.item;
   const l = entry.listing || {};
   const name = (it.name || it.typeLine || '').trim();
   const base = (it.baseType || it.typeLine || '').trim();
-  const mods = [...(it.implicitMods || []), ...(it.explicitMods || []), ...(it.runeMods || []), ...(it.enchantMods || [])];
+  const mods = [...(it.implicitMods || []), ...(it.explicitMods || []), ...(it.runeMods || []), ...(it.enchantMods || [])]
+    .map(modText)
+    .filter(Boolean);
   const fp = crypto.createHash('sha1').update([name, base, it.rarity || '', ...mods].join('|')).digest('hex').slice(0, 16);
   return {
     key: String(entry.id),
