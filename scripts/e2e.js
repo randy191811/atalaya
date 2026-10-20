@@ -257,10 +257,11 @@ try {
   section('[9c] Prueba de conexión con el mercado');
   ok((await user('POST', '/api/admin/diagnostico')).status === 403, 'solo el administrador puede lanzarla');
   const dg = await admin('POST', '/api/admin/diagnostico');
-  ok(dg.status === 200 && dg.json.steps.length === 5, 'hace los 5 pasos (ligas, tienda, búsqueda, divine, chaos)');
+  ok(dg.status === 200 && dg.json.steps.length === 6, 'hace los 6 pasos (ligas, tienda, búsqueda, diccionario, divine, chaos)');
   ok(dg.json.steps[0].ok === true && /ligas/.test(dg.json.steps[0].detail), 'lee las ligas reales del juego');
   ok(dg.json.steps[1].ok === false && /Añade primero tu tienda/.test(dg.json.steps[1].detail), 'sin tienda, lo explica en vez de fallar');
-  ok(dg.json.steps.slice(2).every((x) => x.ok) && /1 divine ≈/.test(dg.json.steps[3].detail), 'búsqueda y divisas funcionan contra el mercado');
+  ok(dg.json.steps.slice(2).every((x) => x.ok) && /1 divine ≈/.test(dg.json.steps[4].detail), 'búsqueda, diccionario y divisas funcionan contra el mercado');
+  ok(/estadísticas/.test(dg.json.steps[3].detail), 'el diagnóstico dice si el diccionario de estadísticas está cargado');
 
   section('[9d] Ligas de verdad, cuenta bien escrita y ficha completa del objeto');
   const lg = await user('GET', '/api/ligas');

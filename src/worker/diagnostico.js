@@ -2,7 +2,7 @@
 // y pide las divisas. Devuelve pasos en lenguaje claro para el administrador.
 import { config } from '../lib/config.js';
 import { decrypt } from '../lib/secrets.js';
-import { searchShop, searchByName, exchangeRate, listLeagues, currentLeague } from './trade2.js';
+import { searchShop, searchByName, exchangeRate, listLeagues, currentLeague, loadStats, statsState } from './trade2.js';
 import { MarketError, isBlocked, queueStatus } from './queue.js';
 
 const why = (e) => {
@@ -69,6 +69,17 @@ export async function runDiagnostic(shop) {
         : 'El buscador respondió pero sin resultados, ni por nombre ni por tipo. Si el objeto sí se vende en el juego, cambió el formato de la búsqueda.');
   } catch (e) {
     add(`Buscar «${term}» en ${league}`, false, why(e));
+  }
+
+  // 3b) El diccionario de estadísticas. Sin él, los afijos de los objetos raros salen con
+  // su nombre interno («Reaver's», «of Dueling») en vez de con lo que hacen.
+  try {
+    const dict = await loadStats();
+    add('Diccionario de estadísticas', !!dict, dict
+      ? `${statsState()}. Los afijos de los objetos se escriben completos.`
+      : `${statsState()}. Mientras tanto los afijos salen con su nombre interno.`);
+  } catch (e) {
+    add('Diccionario de estadísticas', false, why(e));
   }
 
   // 4) Divisas: sin esto, los precios en divine/chaos no se pueden comparar.

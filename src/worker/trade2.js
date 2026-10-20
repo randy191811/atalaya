@@ -1,5 +1,7 @@
 // Cliente del mercado oficial (trade2). Solo lectura. Todo pasa por la cola serial.
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { config } from '../lib/config.js';
 import { request } from './queue.js';
 
@@ -95,13 +97,42 @@ export function reqText(p) {
 }
 
 // Diccionario de estadísticas del mercado: convierte un identificador como
-// "explicit.stat_3299347043" en su texto ("#% increased Spell Damage"). Solo se descarga
-// si hace falta de verdad, y se guarda un día en memoria.
+// "explicit.stat_3299347043" en su texto ("#% increased Spell Damage").
+// SIN ESTO los afijos de los objetos raros salen con su nombre interno («Reaver's»,
+// «of Dueling») en vez de con lo que hacen, así que es imprescindible, no un respaldo.
+// Se guarda en disco una semana: así sobrevive a los reinicios y solo se pide una vez.
+const STATS_FILE = path.join(config.dataDir, 'trade-stats.json');
+const STATS_TTL = 7 * 86400_000;
 let statsDict = null;
 let statsTriedAt = 0;
-export function setStatsDict(d) { statsDict = d; } // para las pruebas
+let statsStatus = 'todavía no se ha pedido';
+export const statsState = () => statsStatus;
+export function setStatsDict(d, estado) { // para las pruebas
+  statsDict = d;
+  statsTriedAt = 0;
+  statsStatus = estado || (d ? `${d.size} estadísticas` : 'todavía no se ha pedido');
+}
+
+function statsFromDisk() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
+    if (raw && raw.at && Date.now() - raw.at < STATS_TTL && raw.entries) {
+      const map = new Map(Object.entries(raw.entries));
+      if (map.size) {
+        statsDict = map;
+        statsStatus = `${map.size} estadísticas (guardadas el ${new Date(raw.at).toLocaleDateString('es')})`;
+        return true;
+      }
+    }
+  } catch { /* no hay copia o está rota: se pide al mercado */ }
+  return false;
+}
+
 export async function loadStats() {
-  if (statsDict || Date.now() - statsTriedAt < 3600_000) return statsDict;
+  if (statsDict) return statsDict;
+  if (statsFromDisk()) return statsDict;
+  // Si acaba de fallar se espera un poco, pero no una hora: sin esto la ficha queda coja.
+  if (Date.now() - statsTriedAt < 120_000) return null;
   statsTriedAt = Date.now();
   try {
     const data = await request('GET', '/data/stats');
@@ -111,8 +142,20 @@ export async function loadStats() {
         if (e && e.id && e.text) map.set(String(e.id), String(e.text));
       }
     }
-    if (map.size) statsDict = map;
-  } catch { /* se seguirá usando el nombre del afijo */ }
+    if (!map.size) {
+      statsStatus = 'el mercado respondió, pero sin ninguna estadística (cambió el formato de /data/stats)';
+      return null;
+    }
+    statsDict = map;
+    statsStatus = `${map.size} estadísticas cargadas`;
+    try {
+      fs.writeFileSync(STATS_FILE, JSON.stringify({ at: Date.now(), entries: Object.fromEntries(map) }), { mode: 0o600 });
+    } catch (e) {
+      statsStatus += ' (no se pudo guardar en disco: ' + (e.message || e) + ')';
+    }
+  } catch (e) {
+    statsStatus = `no se pudo pedir /data/stats: ${(e && e.message) || e}`;
+  }
   return statsDict;
 }
 
@@ -340,7 +383,7 @@ export async function debugRawShopItem(account, leagueName, cookie, listingKey =
       propiedades: d.properties || [],
       implicitos: d.implicits || [],
       afijos: d.mods || [],
-      diccionario: statsDict ? `${statsDict.size} estadísticas cargadas` : 'no hizo falta',
+      diccionario: statsState(),
     },
     crudo: raw,
   };
