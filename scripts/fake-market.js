@@ -65,6 +65,12 @@ http
     if (state.mode === '429') return json(res, 429, { error: 'rate' }, { 'Retry-After': String(state.retryAfter) });
     if (state.mode === '403') return json(res, 403, { error: 'blocked' });
 
+    if (p === '/data/stats' && req.method === 'GET') {
+      return json(res, 200, { result: [{ label: 'Explicit', entries: [
+        { id: 'explicit.stat_1', text: '#% increased Spell Damage' },
+        { id: 'explicit.stat_2', text: '+# to maximum Mana' },
+      ] }] });
+    }
     if (p === '/data/leagues' && req.method === 'GET') {
       if (state.mode === 'empty') return json(res, 200, { result: [] });
       return json(res, 200, { result: (state.leagues || ['Standard', 'Hardcore']).map((id) => ({ id, text: id })) });

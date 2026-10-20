@@ -14,13 +14,22 @@ function modText(m) {
   return null;
 }
 
-// Orden en que el juego muestra los modificadores. Después se barre cualquier otra
-// lista que acabe en "Mods" (así, si el mercado añade un tipo nuevo, igual se lee).
-const MOD_ORDER = [
-  'enchantMods', 'scourgeMods', 'implicitMods', 'runeMods', 'fracturedMods',
-  'explicitMods', 'craftedMods', 'desecratedMods', 'veiledMods', 'crucibleMods',
-  'logbookMods', 'utilityMods', 'notableProperties',
+// El juego muestra primero lo que trae la base (implícitos, runas, encantamientos)
+// y debajo los modificadores que le tocaron al objeto. Se separan en dos grupos porque
+// un objeto puede traer los de arriba y faltarle los de abajo: entonces hay que ir a
+// buscarlos a otro sitio en vez de dar la ficha por buena con una sola línea.
+const IMPLICIT_FIELDS = ['enchantMods', 'scourgeMods', 'implicitMods', 'runeMods'];
+const EXPLICIT_FIELDS = [
+  'fracturedMods', 'explicitMods', 'craftedMods', 'desecratedMods',
+  'veiledMods', 'crucibleMods', 'logbookMods', 'utilityMods',
 ];
+const MOD_ORDER = [...IMPLICIT_FIELDS, ...EXPLICIT_FIELDS];
+// Listas de texto que NO son modificadores, para que el barrido general no las cuele.
+const NOT_MODS = new Set([
+  'flavourText', 'descrText', 'secDescrText', 'prophecyText', 'requirements',
+  'properties', 'additionalProperties', 'nextLevelRequirements', 'sockets',
+  'socketedItems', 'influences', 'hashes', 'extended', 'incubatedItem', 'ultimatumMods',
+]);
 
 // "Monster Level: 79", "Quality: +20%"… el formato de propiedades del mercado es
 // { name, values: [[valor, tipo]] }.
@@ -35,33 +44,113 @@ function propText(p) {
   return name ? `${name}: ${vals.join(', ')}` : vals.join(', ');
 }
 
-// Reúne TODO el texto del objeto, pase lo que pase con el nombre de los campos.
-export function collectMods(it) {
+// Diccionario de estadísticas del mercado: convierte un identificador como
+// "explicit.stat_3299347043" en su texto ("#% increased Spell Damage"). Solo se descarga
+// si hace falta de verdad, y se guarda un día en memoria.
+let statsDict = null;
+let statsTriedAt = 0;
+export function setStatsDict(d) { statsDict = d; } // para las pruebas
+export async function loadStats() {
+  if (statsDict || Date.now() - statsTriedAt < 3600_000) return statsDict;
+  statsTriedAt = Date.now();
+  try {
+    const data = await request('GET', '/data/stats');
+    const map = new Map();
+    for (const group of (data && data.result) || []) {
+      for (const e of (group && group.entries) || []) {
+        if (e && e.id && e.text) map.set(String(e.id), String(e.text));
+      }
+    }
+    if (map.size) statsDict = map;
+  } catch { /* se seguirá usando el nombre del afijo */ }
+  return statsDict;
+}
+
+// Reconstruye el texto de un modificador a partir de sus valores y el diccionario.
+// { name:'Tyrannical', magnitudes:[{hash:'explicit.stat_X', min:'155', max:'169'}] }
+function textFromExtended(mod, dict) {
   const out = [];
-  const push = (v) => {
+  const seen = new Set();
+  for (const g of (mod && mod.magnitudes) || []) {
+    if (!g || !g.hash || seen.has(g.hash)) continue;
+    seen.add(g.hash);
+    const tpl = dict && dict.get(String(g.hash));
+    if (!tpl) continue;
+    const val = String(g.min) === String(g.max) ? String(g.min) : `${g.min}-${g.max}`;
+    out.push(tpl.replace(/#/g, val));
+  }
+  if (out.length) return out;
+  const n = modText(mod);
+  return n ? [n] : [];
+}
+
+function extendedGroup(it, kinds) {
+  const ex = it.extended && it.extended.mods;
+  if (!ex || typeof ex !== 'object') return [];
+  const out = [];
+  for (const [k, group] of Object.entries(ex)) {
+    if (!Array.isArray(group) || !kinds.includes(k)) continue;
+    for (const mod of group) out.push(...textFromExtended(mod, statsDict));
+  }
+  return out;
+}
+
+// ¿Este objeto se quedaría sin sus características propias? Entonces conviene
+// descargar el diccionario de estadísticas antes de leerlo.
+export function needsStatsDict(entry) {
+  const it = entry && entry.item;
+  if (!it || statsDict) return false;
+  const tieneTexto = EXPLICIT_FIELDS.some((k) => Array.isArray(it[k]) && it[k].length);
+  const tieneExtendido = !!(it.extended && it.extended.mods && Object.keys(it.extended.mods).length);
+  return !tieneTexto && tieneExtendido;
+}
+
+// Reúne TODO el texto del objeto, pase lo que pase con el nombre de los campos.
+// Se devuelve en el orden del juego: primero lo de la base, luego lo propio del objeto.
+export function collectMods(it) {
+  const imp = [];
+  const exp = [];
+  const into = (arr) => (v) => {
     const t = modText(v);
-    if (t && !out.includes(t)) out.push(t);
+    if (t && !arr.includes(t) && !imp.includes(t) && !exp.includes(t)) arr.push(t);
   };
 
-  for (const k of MOD_ORDER) if (Array.isArray(it[k])) it[k].forEach(push);
+  for (const k of IMPLICIT_FIELDS) if (Array.isArray(it[k])) it[k].forEach(into(imp));
+  for (const k of EXPLICIT_FIELDS) if (Array.isArray(it[k])) it[k].forEach(into(exp));
+  // Cualquier otra lista de modificadores, incluida una que el juego añada mañana.
   for (const k of Object.keys(it)) {
-    if (!MOD_ORDER.includes(k) && /Mods$/.test(k) && Array.isArray(it[k])) it[k].forEach(push);
+    if (MOD_ORDER.includes(k) || NOT_MODS.has(k) || !Array.isArray(it[k])) continue;
+    if (/Mods$/.test(k) || /^(stats|affixes)$/.test(k)) it[k].forEach(into(exp));
   }
+  // Habilidades que concede la base (los cetros y varitas de PoE2 las llevan).
+  if (Array.isArray(it.grantedSkills)) it.grantedSkills.forEach((p) => into(imp)(propText(p)));
 
-  // Habilidades que concede el objeto (muchos únicos las llevan).
-  for (const k of ['grantedSkills', 'additionalProperties']) {
-    if (Array.isArray(it[k])) it[k].forEach((p) => push(propText(p)));
+  // Si el objeto tiene afijos pero el mercado no mandó su texto, se reconstruye desde
+  // el bloque extendido. Esto es lo que rescata los modificadores de los raros.
+  if (!exp.length) extendedGroup(it, ['explicit', 'crafted', 'fractured', 'veiled', 'desecrated']).forEach(into(exp));
+  if (!imp.length) extendedGroup(it, ['implicit', 'enchant', 'rune', 'scourge']).forEach(into(imp));
+
+  // Y si de verdad no hay ningún modificador (tabletas, monedas, gemas…), se usan sus
+  // propiedades y su descripción para no dejar la ficha en blanco.
+  if (!imp.length && !exp.length) {
+    if (Array.isArray(it.properties)) it.properties.forEach((p) => into(exp)(propText(p)));
+    for (const k of ['descrText', 'secDescrText']) if (typeof it[k] === 'string') into(exp)(it[k]);
   }
+  return [...imp, ...exp];
+}
 
-  // Si por el tipo de objeto no hubo ningún modificador (tabletas, monedas, gemas…),
-  // se usa su propia descripción y sus propiedades para no dejar la ficha vacía.
-  if (!out.length) {
-    if (Array.isArray(it.properties)) it.properties.forEach((p) => push(propText(p)));
-    for (const k of ['descrText', 'secDescrText']) if (typeof it[k] === 'string') push(it[k]);
-    const ex = it.extended && it.extended.mods;
-    if (ex && typeof ex === 'object') {
-      for (const group of Object.values(ex)) if (Array.isArray(group)) group.forEach(push);
-    }
+// Resumen en claro de qué trae un objeto del mercado. Sirve para ver de un vistazo,
+// desde Administrar, si falta algo y dónde, sin tener que leer el JSON entero.
+export function inventoryOf(it) {
+  if (!it || typeof it !== 'object') return [];
+  const out = [];
+  for (const [k, v] of Object.entries(it)) {
+    if (Array.isArray(v)) out.push(`${k}[${v.length}]`);
+    else if (v && typeof v === 'object') out.push(`${k}{${Object.keys(v).join(',')}}`);
+  }
+  const ex = it.extended && it.extended.mods;
+  if (ex && typeof ex === 'object') {
+    for (const [k, v] of Object.entries(ex)) out.push(`extended.mods.${k}[${Array.isArray(v) ? v.length : '?'}]`);
   }
   return out;
 }
@@ -95,7 +184,11 @@ export async function fetchEntries(ids, queryId, cookie) {
   for (let i = 0; i < ids.length; i += 10) {
     const chunk = ids.slice(i, i + 10);
     const data = await request('GET', `/fetch/${chunk.join(',')}?query=${encodeURIComponent(queryId)}`, { cookie });
-    for (const e of (data && data.result) || []) {
+    const entries = ((data && data.result) || []).filter(Boolean);
+    // Si algún objeto trae sus afijos sin texto, se descarga una sola vez el diccionario
+    // del mercado para poder escribirlos. Lo normal es no necesitarlo nunca.
+    if (entries.some(needsStatsDict)) await loadStats();
+    for (const e of entries) {
       const n = normalizeEntry(e);
       if (n) out.push(n);
     }
@@ -125,7 +218,17 @@ export async function debugRawShopItem(account, leagueName, cookie) {
   const id = ((s && s.result) || [])[0];
   if (!id) return null;
   const data = await request('GET', `/fetch/${id}?query=${encodeURIComponent(s.id)}`, { cookie });
-  return ((data && data.result) || [])[0] || null;
+  const raw = ((data && data.result) || [])[0] || null;
+  if (!raw) return null;
+  if (needsStatsDict(raw)) await loadStats();
+  return {
+    resumen: {
+      campos: inventoryOf(raw.item),
+      leido: collectMods(raw.item),
+      diccionario: statsDict ? `${statsDict.size} estadísticas cargadas` : 'no hizo falta',
+    },
+    crudo: raw,
+  };
 }
 
 // Todos los anuncios de la tienda de una cuenta (hasta 100, el máximo que devuelve una búsqueda).

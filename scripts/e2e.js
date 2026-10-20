@@ -274,6 +274,13 @@ try {
   await post(fake + '/__set', { account: 'Ana#1234', items: [
     { id: 'R1', name: 'Anillo Raro', base: 'Sapphire Ring', price: { amount: 5, currency: 'divine' }, modsField: 'runeMods', mods: ['+15% a la velocidad de ataque'], ilvl: 82, corrupted: true },
     { id: 'R2', name: 'Mythic Terraform', base: 'Expedition Tablet', rarity: 'Normal', price: { amount: 5, currency: 'divine' }, mods: [], properties: [{ name: 'Nivel de monstruo', values: [['79', 0]] }] },
+    // Varita rara con su implícito pero sin el texto de los afijos: hay que reconstruirlos.
+    { id: 'R3', name: 'Torment Weaver', base: 'Dueling Wand', price: { amount: 60, currency: 'exalted' },
+      modsField: 'implicitMods', mods: ['Grants Skill: Level 18 Spellslinger'],
+      extendedMods: { explicit: [
+        { name: 'Tyrannical', magnitudes: [{ hash: 'explicit.stat_1', min: '120', max: '120' }] },
+        { name: 'of the Sorcerer', magnitudes: [{ hash: 'explicit.stat_2', min: '30', max: '38' }] },
+      ] } },
   ] });
   await check(user, shopId);
   let det = (await user('GET', '/api/tiendas')).json.shops[0].listings;
@@ -282,6 +289,11 @@ try {
   ok(anillo && anillo.stats[0] === '+15% a la velocidad de ataque', 'lee los modificadores aunque vengan en otro campo del mercado');
   ok(anillo && anillo.item_level === 82 && anillo.corrupted === true, 'guarda el nivel de objeto y la corrupción');
   ok(tablet && tablet.stats.includes('Nivel de monstruo: 79'), 'un objeto sin modificadores muestra sus propiedades en vez de quedarse en blanco');
+  const varita = det.find((l) => l.name === 'Torment Weaver');
+  ok(varita && varita.stats.length === 3, 'un raro al que le falta el texto de sus afijos ya no sale con una sola línea');
+  ok(varita && varita.stats[0] === 'Grants Skill: Level 18 Spellslinger' && varita.stats[1] === '120% increased Spell Damage' && varita.stats[2] === '+30-38 to maximum Mana',
+    'se reconstruyen sus características completas, con el implícito primero');
+  ok((await get(fake + '/__stats')).calls.some((c) => c.path === '/data/stats'), 'para eso descarga el diccionario de estadísticas del mercado');
 
   // Corregir la cuenta: se vacían los anuncios viejos y se lee la nueva.
   await post(fake + '/__set', { account: 'Beto#4321', items: [{ id: 'B1', name: 'Objeto de Beto', base: 'Sapphire Ring', price: { amount: 1, currency: 'divine' } }] });

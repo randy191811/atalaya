@@ -1042,8 +1042,16 @@
       out.innerHTML = `<div class="working">${RUNES}<strong>Leyendo un objeto…</strong></div>`;
       try {
         const r = await api('GET', '/api/admin/depurar-objeto');
-        const txt = JSON.stringify(r.raw, null, 2);
-        out.innerHTML = `<p class="small muted">Copia todo este texto y pégaselo a Claude para que ajuste el código.</p><textarea readonly rows="16" style="width:100%;font-family:var(--mono,monospace);font-size:12px">${esc(txt)}</textarea>`;
+        if (!r.raw) { out.innerHTML = '<p class="diag-bad">Tu tienda no devolvió ningún objeto.</p>'; ev.target.disabled = false; return; }
+        const s = r.raw.resumen || {};
+        const txt = JSON.stringify(r.raw.crudo, null, 2);
+        out.innerHTML = `<ul class="diag">
+            <li class="${(s.leido || []).length > 1 ? 'ok' : 'bad'}"><b>Características leídas: ${(s.leido || []).length}</b><span>${esc((s.leido || []).join(' · ') || 'ninguna')}</span></li>
+            <li class="ok"><b>Qué manda el mercado</b><span>${esc((s.campos || []).join('  '))}</span></li>
+            <li class="ok"><b>Diccionario de estadísticas</b><span>${esc(s.diccionario || '')}</span></li>
+          </ul>
+          <p class="small muted">Si algo no cuadra, copia el texto de abajo y pégaselo a Claude.</p>
+          <textarea readonly rows="14" style="width:100%;font-family:var(--mono,monospace);font-size:12px">${esc(txt)}</textarea>`;
       } catch (e) { out.innerHTML = `<p class="diag-bad">${esc(e.message)}</p>`; }
       ev.target.disabled = false;
     };

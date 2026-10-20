@@ -66,6 +66,30 @@ const tableta = collectMods({ properties: [{ name: 'Nivel de monstruo', values: 
 ok(tableta.includes('Nivel de monstruo: 79') && tableta.includes('Usar en un mapa'), 'sin modificadores, usa propiedades y descripción (tabletas y monedas)');
 ok(collectMods({ explicitMods: ['+5 a la vida'], properties: [{ name: 'Calidad', values: [['+20%', 0]] }] }).length === 1, 'si ya hay modificadores, no añade propiedades de relleno');
 ok(collectMods({ extended: { mods: { explicit: [{ name: 'del bloque extendido' }] } } })[0] === 'del bloque extendido', 'último recurso: el bloque extendido');
+
+// El fallo real visto en la página: una varita rara con su implícito pero SIN el texto de
+// sus afijos. Antes se daba la ficha por buena con una sola línea; ahora se reconstruyen.
+const { setStatsDict, needsStatsDict, inventoryOf } = await import('../src/worker/trade2.js');
+const varita = {
+  name: 'Torment Weaver', baseType: 'Dueling Wand', rarity: 'Rare', ilvl: 81,
+  implicitMods: ['Grants Skill: Level 18 Spellslinger'],
+  extended: { mods: { explicit: [
+    { name: 'Tyrannical', magnitudes: [{ hash: 'explicit.stat_1', min: '120', max: '120' }] },
+    { name: 'of the Sorcerer', magnitudes: [{ hash: 'explicit.stat_2', min: '30', max: '38' }] },
+  ] } },
+};
+setStatsDict(null);
+ok(needsStatsDict({ item: varita }) === true, 'detecta que a un raro le falta el texto de sus afijos');
+ok(needsStatsDict({ item: { explicitMods: ['+1'], extended: { mods: { explicit: [{}] } } } }) === false, 'si el texto ya viene, no se pide el diccionario');
+const sinDicc = collectMods(varita);
+ok(sinDicc.length === 3 && sinDicc[0] === 'Grants Skill: Level 18 Spellslinger' && sinDicc[1] === 'Tyrannical',
+  'sin diccionario, al menos salen los nombres de los afijos en vez de una sola línea');
+setStatsDict(new Map([['explicit.stat_1', '#% increased Spell Damage'], ['explicit.stat_2', '+# to maximum Mana']]));
+const conDicc = collectMods(varita);
+ok(conDicc.length === 3 && conDicc[0] === 'Grants Skill: Level 18 Spellslinger' && conDicc[1] === '120% increased Spell Damage' && conDicc[2] === '+30-38 to maximum Mana',
+  'con el diccionario se escriben las características completas, implícito primero');
+setStatsDict(null);
+ok(inventoryOf(varita).includes('implicitMods[1]') && inventoryOf(varita).includes('extended.mods.explicit[2]'), 'el resumen dice qué campos manda el mercado');
 const norm = normalizeEntry({ id: 'x1', item: { name: 'Objeto', baseType: 'Base', rarity: 'Unique', ilvl: 81, corrupted: true, explicitMods: ['+1 a todo'] }, listing: { price: { amount: 3, currency: 'divine' } } });
 ok(norm.item_level === 81 && norm.corrupted === 1 && norm.stats[0] === '+1 a todo' && norm.price_amount === 3, 'normaliza nivel de objeto, corrupción, precio y modificadores');
 ok(normalizeEntry({ id: 'x2', item: { name: 'A' } }).stats.length === 0 && normalizeEntry({ id: 'x3' }) === null, 'un objeto sin datos no revienta la lectura');
