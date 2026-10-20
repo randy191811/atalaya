@@ -16,7 +16,7 @@ import { queueStatus, isBlocked } from '../worker/queue.js';
 import { checkShop, checkWishes, isRunning, notifyUser, mainLeague } from '../worker/jobs.js';
 import { reviewListing, verdictFrom } from '../worker/reviews.js';
 import { runDiagnostic } from '../worker/diagnostico.js';
-import { listLeagues, currentLeague, debugRawShopItem } from '../worker/trade2.js';
+import { listLeagues, currentLeague, debugRawShopItem, debugShopReport } from '../worker/trade2.js';
 import { MarketError } from '../worker/queue.js';
 
 export class HttpError extends Error {
@@ -522,6 +522,13 @@ export async function handleApi(req, res, url, send, setCookie) {
       if (!shop) throw bad('Añade primero una tienda.');
       const raw = await debugRawShopItem(shop.poe_account, shop.league, decrypt(shop.poe_session_enc) || undefined, listing ? listing.listing_key : null);
       return send(200, { raw });
+    }
+    if (path === '/api/admin/informe' && m === 'GET') {
+      if (tooMany(`informe:${u.id}`, 3, 600)) throw new HttpError(429, 'Espera unos minutos entre informes para no saturar el mercado.');
+      const shop = db.prepare('SELECT * FROM shops WHERE user_id = ? ORDER BY id LIMIT 1').get(u.id);
+      if (!shop) throw bad('Añade primero una tienda.');
+      const texto = await debugShopReport(shop.poe_account, shop.league, decrypt(shop.poe_session_enc) || undefined);
+      return send(200, { texto });
     }
     if (path === '/api/admin/invitacion' && m === 'POST') {
       const token = crypto.randomBytes(18).toString('base64url');

@@ -95,14 +95,22 @@ setStatsDict(null);
 ok(needsStatsDict({ item: varita }) === true, 'detecta que a un raro le falta el texto de sus afijos');
 ok(needsStatsDict({ item: { explicitMods: ['+1'], extended: { mods: { explicit: [{}] } } } }) === false, 'si el texto ya viene, no se pide el diccionario');
 const sinDicc = collectMods(varita);
-ok(sinDicc.length === 3 && sinDicc[0] === 'Grants Skill: Level 18 Spellslinger' && sinDicc[1] === 'Tyrannical',
-  'sin diccionario, al menos salen los nombres de los afijos en vez de una sola línea');
+ok(sinDicc.length === 3 && sinDicc[0] === 'Grants Skill: Level 18 Spellslinger' && sinDicc[1] === 'Tyrannical: 120' && sinDicc[2] === 'of the Sorcerer: 30-38',
+  'sin diccionario, sale el nombre del afijo CON su valor: ninguna estadística se pierde');
 setStatsDict(new Map([['explicit.stat_1', '#% increased Spell Damage'], ['explicit.stat_2', '+# to maximum Mana']]));
 const conDicc = collectMods(varita);
 ok(conDicc.length === 3 && conDicc[0] === 'Grants Skill: Level 18 Spellslinger' && conDicc[1] === '120% increased Spell Damage' && conDicc[2] === '+30-38 to maximum Mana',
   'con el diccionario se escriben las características completas, implícito primero');
 setStatsDict(null);
 ok(inventoryOf(varita).includes('implicitMods[1]') && inventoryOf(varita).includes('extended.mods.explicit[2]'), 'el resumen dice qué campos manda el mercado');
+// Media tirada: si solo una estadística está en el diccionario, la otra NO puede desaparecer.
+setStatsDict(new Map([['explicit.stat_1', '#% increased Spell Damage']]));
+const medias = collectMods(varita);
+ok(medias.length === 3 && medias[1] === '120% increased Spell Damage' && medias[2] === 'of the Sorcerer: 30-38',
+  'con el diccionario a medias, lo que no se puede escribir sale con su nombre y su valor');
+const { missingStats } = await import('../src/worker/trade2.js');
+ok(missingStats(varita) === 1, 'y se cuenta cuántas estadísticas quedaron sin texto');
+setStatsDict(null);
 
 // La ficha completa: el mercado manda el texto con el marcado interno del juego.
 const { cleanMarkup, propText, itemDetail } = await import('../src/worker/trade2.js');

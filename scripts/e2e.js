@@ -325,6 +325,11 @@ try {
   const dbg2 = (await admin('GET', `/api/admin/depurar-objeto?listing=${mazaAdmin.id}`)).json.raw;
   ok(dbg2 && dbg2.resumen.objeto.startsWith('Torment Burst') && dbg2.resumen.afijos.length === 1 && dbg2.resumen.propiedades.length === 2,
     'y desde la ficha de un objeto concreto trae ese objeto, no otro');
+  const inf = await admin('GET', '/api/admin/informe');
+  ok(inf.status === 200 && /informe de lectura/.test(inf.json.texto) && /Torment Burst/.test(inf.json.texto) && /diccionario de estadísticas/.test(inf.json.texto),
+    'el informe de una pulsación resume la tienda entera en texto');
+  ok(/fuente explicitMods/.test(inf.json.texto) && /fuente extended\.mods/.test(inf.json.texto) && /con afijos: 2/.test(inf.json.texto),
+    'y dice de dónde salió cada afijo y cuántos objetos quedaron sin ellos');
   await admin('DELETE', `/api/tiendas/${sa.json.id}`);
 
   // Corregir la cuenta: se vacían los anuncios viejos y se lee la nueva.

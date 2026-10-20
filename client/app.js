@@ -1078,8 +1078,9 @@
       <section class="panel"><div class="panel-head"><h2>Conexión con el mercado oficial</h2><button class="btn primary small" data-diag>Probar conexión con el mercado</button></div>
         <p class="muted m0">${d.queue.blocked ? `En pausa hasta las ${timeFmt(d.queue.blockedUntil)} porque lo pidió el mercado.` : 'Funcionando.'} Una petición cada ${nf(d.queue.gapMs / 1000, 1)} s como mínimo. La prueba lee tu tienda, hace una búsqueda y pide las divisas; tarda unos 15–30 segundos.</p>
         <div data-diag-out></div></section>
-      <section class="panel"><div class="panel-head"><h2>Depurar un objeto</h2><button class="btn small ghost" data-rawitem>Ver el JSON crudo de un objeto de mi tienda</button></div>
-        <p class="muted m0">Solo para desarrollo: trae un objeto de tu tienda tal cual lo manda el mercado, sin procesar. Útil cuando algo no se ve bien y hay que ajustar el código.</p>
+      <section class="panel"><div class="panel-head"><h2>Informe para Claude</h2>
+          <div class="row m0"><button class="btn small primary" data-informe>Generar y copiar informe</button><button class="btn small ghost" data-rawitem>Ver un objeto en crudo</button></div></div>
+        <p class="muted m0">Lee tu tienda y resume, objeto por objeto, qué manda el mercado y qué se ha conseguido leer. Pulsa, espera unos segundos y pégaselo a Claude: con eso ve lo que ve el servidor.</p>
         <div data-rawitem-out></div></section>
       <section class="panel"><div class="panel-head"><h2>Usuarios (${d.users.length})</h2>${d.signupMode === 'invite' ? '<button class="btn small" data-inv>Crear invitación</button>' : ''}</div>
         <table class="list"><thead><tr><th>Nombre</th><th>Correo</th><th>Plan</th><th>Créditos</th><th>Tiendas</th></tr></thead><tbody>${d.users.map((x) => `<tr><td>${esc(x.name)}${x.role === 'admin' ? ' <span class="small muted">admin</span>' : ''}</td><td>${esc(x.email)}</td><td>${esc(x.plan)}</td><td class="num">${x.credits}</td><td class="num">${x.shops}</td></tr>`).join('')}</tbody></table></section>`;
@@ -1099,6 +1100,19 @@
         const r = await api('POST', '/api/admin/diagnostico');
         out.innerHTML = `<ul class="diag">${r.steps.map((st) => `<li class="${st.ok ? 'ok' : 'bad'}"><b>${st.ok ? '✔' : '✖'} ${esc(st.name)}</b><span>${esc(st.detail)}</span></li>`).join('')}</ul>
           <p class="${r.ok ? 'diag-ok' : 'diag-bad'}">${r.ok ? 'Todo funciona con el mercado real.' : 'Algo no funciona. Lo que dice cada paso indica dónde mirar; si es un cambio del mercado, el ajuste va en src/worker/trade2.js.'}</p>`;
+      } catch (e) { out.innerHTML = `<p class="diag-bad">${esc(e.message)}</p>`; }
+      ev.target.disabled = false;
+    };
+    $('[data-informe]', view).onclick = async (ev) => {
+      const out = $('[data-rawitem-out]', view);
+      ev.target.disabled = true;
+      out.innerHTML = `<div class="working">${RUNES}<strong>Leyendo tu tienda objeto por objeto…</strong><span class="small">Tarda entre 20 y 60 segundos: el mercado se consulta despacio a propósito.</span></div>`;
+      try {
+        const r = await api('GET', '/api/admin/informe');
+        let copiado = false;
+        try { await navigator.clipboard.writeText(r.texto); copiado = true; } catch {}
+        out.innerHTML = `<p class="${copiado ? 'diag-ok' : 'small muted'}">${copiado ? 'Informe copiado: pégalo en el chat con Claude.' : 'Selecciona el texto y cópialo para pegárselo a Claude.'}</p>
+          <textarea readonly rows="16" style="width:100%;font-family:var(--mono,monospace);font-size:12px">${esc(r.texto)}</textarea>`;
       } catch (e) { out.innerHTML = `<p class="diag-bad">${esc(e.message)}</p>`; }
       ev.target.disabled = false;
     };

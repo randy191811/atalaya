@@ -164,17 +164,33 @@ export async function loadStats() {
 function textFromExtended(mod, dict) {
   const out = [];
   const seen = new Set();
+  const nombre = modText(mod) || 'Modificador';
   for (const g of (mod && mod.magnitudes) || []) {
     if (!g || !g.hash || seen.has(g.hash)) continue;
     seen.add(g.hash);
-    const tpl = dict && dict.get(String(g.hash));
-    if (!tpl) continue;
     const val = String(g.min) === String(g.max) ? String(g.min) : `${g.min}-${g.max}`;
-    out.push(tpl.replace(/#/g, val));
+    const tpl = dict && dict.get(String(g.hash));
+    // Si una estadística no está en el diccionario NO se tira: se enseña el nombre del
+    // afijo con su valor. Antes se perdía en silencio y el objeto salía a medias.
+    out.push(tpl ? tpl.replace(/#/g, val) : `${nombre}: ${val}`);
   }
-  if (out.length) return out;
-  const n = modText(mod);
-  return n ? [n] : [];
+  if (out.length) return [...new Set(out)];
+  return nombre ? [nombre] : [];
+}
+
+// Cuántas estadísticas de este objeto no se han podido escribir con el diccionario.
+export function missingStats(it) {
+  const ex = it && it.extended && it.extended.mods;
+  if (!ex || typeof ex !== 'object') return 0;
+  let n = 0;
+  for (const group of Object.values(ex)) {
+    for (const mod of Array.isArray(group) ? group : []) {
+      for (const g of (mod && mod.magnitudes) || []) {
+        if (g && g.hash && !(statsDict && statsDict.get(String(g.hash)))) n++;
+      }
+    }
+  }
+  return n;
 }
 
 function extendedGroup(it, kinds) {
@@ -387,6 +403,43 @@ export async function debugRawShopItem(account, leagueName, cookie, listingKey =
     },
     crudo: raw,
   };
+}
+
+// Informe de lectura de toda la tienda, en texto plano y de una sola pieza: qué manda el
+// mercado de cada objeto y qué se ha conseguido leer. Pensado para copiar y pegar entero.
+export async function debugShopReport(account, leagueName, cookie, max = 30) {
+  await loadStats();
+  const body = {
+    query: { status: { option: 'any' }, filters: { trade_filters: { filters: { account: { input: account } } } } },
+    sort: { price: 'asc' },
+  };
+  const s = await request('POST', `/search/${league(leagueName)}`, { body, cookie });
+  const all = ((s && s.result) || []).filter(Boolean).slice(0, max);
+  const cuerpo = [];
+  let conAfijos = 0;
+  let sinAfijos = 0;
+  for (let i = 0; i < all.length; i += 10) {
+    const data = await request('GET', `/fetch/${all.slice(i, i + 10).join(',')}?query=${encodeURIComponent(s.id)}`, { cookie });
+    for (const e of ((data && data.result) || []).filter(Boolean)) {
+      const it = e.item || {};
+      const d = itemDetail(it) || { properties: [], requirements: [], granted: [], implicits: [], mods: [] };
+      const fuente = Array.isArray(it.explicitMods) && it.explicitMods.length ? 'explicitMods'
+        : it.extended && it.extended.mods ? 'extended.mods' : 'ninguna';
+      if (d.mods.length) conAfijos++; else sinAfijos++;
+      cuerpo.push(`• ${[it.name, it.baseType].filter(Boolean).join(' / ')} [${it.rarity || '?'}]${it.identified === false ? ' SIN IDENTIFICAR' : ''}`);
+      cuerpo.push(`  campos: ${inventoryOf(it).join(' ')}`);
+      cuerpo.push(`  props ${d.properties.length} · req ${d.requirements.length} · concede ${d.granted.length} · implícitos ${d.implicits.length} · afijos ${d.mods.length} (fuente ${fuente}, sin texto ${missingStats(it)})`);
+      if (d.mods.length) cuerpo.push(`  → ${d.mods.join(' | ')}`);
+    }
+  }
+  return [
+    'Atalaya — informe de lectura del mercado',
+    `cuenta ${account} · liga ${leagueName} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`,
+    `diccionario de estadísticas: ${statsState()}`,
+    `anuncios en la tienda: ${Number(s && s.total) || all.length} · mirados: ${all.length} · con afijos: ${conAfijos} · sin afijos: ${sinAfijos}`,
+    '',
+    ...cuerpo,
+  ].join('\n').slice(0, 14000);
 }
 
 // Todos los anuncios de la tienda de una cuenta (hasta 100, el máximo que devuelve una búsqueda).
