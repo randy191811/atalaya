@@ -267,23 +267,39 @@ export function spreadSample(ids, n) {
   return [...new Set(out)];
 }
 
-// Solo para depurar: trae 1 anuncio de la tienda SIN normalizar, tal cual lo manda el mercado.
-export async function debugRawShopItem(account, leagueName, cookie) {
+// Solo para depurar: trae un anuncio de la tienda SIN normalizar, tal cual lo manda el
+// mercado. Si se pasa `listingKey`, trae ESE objeto; si no, busca el primero que se vea
+// incompleto (el que interesa mirar), y si todos están bien, el primero de la lista.
+export async function debugRawShopItem(account, leagueName, cookie, listingKey = null) {
   const body = {
     query: { status: { option: 'any' }, filters: { trade_filters: { filters: { account: { input: account } } } } },
     sort: { price: 'asc' },
   };
   const s = await request('POST', `/search/${league(leagueName)}`, { body, cookie });
-  const id = ((s && s.result) || [])[0];
-  if (!id) return null;
-  const data = await request('GET', `/fetch/${id}?query=${encodeURIComponent(s.id)}`, { cookie });
-  const raw = ((data && data.result) || [])[0] || null;
-  if (!raw) return null;
-  if (needsStatsDict(raw)) await loadStats();
+  const all = ((s && s.result) || []).filter(Boolean);
+  if (!all.length) return null;
+  // Si se pide un objeto concreto se trae solo ese; si no, se miran los 10 primeros
+  // para poder elegir uno que esté incompleto.
+  const ids = listingKey ? (all.includes(String(listingKey)) ? [String(listingKey)] : []) : all.slice(0, 10);
+  if (!ids.length) return { noEsta: true };
+  const data = await request('GET', `/fetch/${ids.join(',')}?query=${encodeURIComponent(s.id)}`, { cookie });
+  const entries = ((data && data.result) || []).filter(Boolean);
+  if (!entries.length) return null;
+  if (entries.some(needsStatsDict)) await loadStats();
+  // El que interesa mirar es el que se queda sin características propias.
+  const roto = entries.find((e) => itemDetail(e.item) && !itemDetail(e.item).mods.length);
+  const raw = roto || entries[0];
+  const d = itemDetail(raw.item) || {};
   return {
     resumen: {
+      objeto: `${(raw.item && raw.item.name) || ''} ${(raw.item && raw.item.baseType) || ''}`.trim(),
+      rareza: (raw.item && raw.item.rarity) || '?',
+      revisados: entries.length,
+      incompletos: entries.filter((e) => { const x = itemDetail(e.item); return x && !x.mods.length; }).length,
       campos: inventoryOf(raw.item),
-      leido: collectMods(raw.item),
+      propiedades: d.properties || [],
+      implicitos: d.implicits || [],
+      afijos: d.mods || [],
       diccionario: statsDict ? `${statsDict.size} estadísticas cargadas` : 'no hizo falta',
     },
     crudo: raw,

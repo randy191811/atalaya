@@ -308,6 +308,21 @@ try {
   ok(fm.implicits && fm.implicits[0] === '+15 to Strength' && fm.mods && fm.mods[0] === '+120 to maximum Life',
     'y además sus modificadores: la ficha trae todo, no una cosa u otra');
 
+  // El depurador: tiene que señalar solo el objeto que está incompleto, no el primero.
+  ok((await user('GET', '/api/admin/depurar-objeto')).status === 403, 'el depurador es solo del administrador');
+  const sa = await admin('POST', '/api/tiendas', { account: 'Ana#1234', league: 'Liga Prueba' });
+  await check(admin, sa.json.id);
+  const dbg = (await admin('GET', '/api/admin/depurar-objeto')).json.raw;
+  ok(dbg && dbg.resumen.afijos.length === 0 && dbg.resumen.incompletos === 2 && dbg.resumen.revisados === 4,
+    'sin pedirle nada, el depurador elige un objeto sin afijos y dice cuántos hay así');
+  ok(dbg && (dbg.resumen.campos || []).includes('runeMods[1]') && dbg.resumen.implicitos.length === 1 && dbg.crudo && dbg.crudo.item,
+    'y enseña en qué campo vienen los datos, con el objeto crudo debajo');
+  const mazaAdmin = (await admin('GET', '/api/tiendas')).json.shops[0].listings.find((l) => l.name === 'Torment Burst');
+  const dbg2 = (await admin('GET', `/api/admin/depurar-objeto?listing=${mazaAdmin.id}`)).json.raw;
+  ok(dbg2 && dbg2.resumen.objeto.startsWith('Torment Burst') && dbg2.resumen.afijos.length === 1 && dbg2.resumen.propiedades.length === 2,
+    'y desde la ficha de un objeto concreto trae ese objeto, no otro');
+  await admin('DELETE', `/api/tiendas/${sa.json.id}`);
+
   // Corregir la cuenta: se vacían los anuncios viejos y se lee la nueva.
   await post(fake + '/__set', { account: 'Beto#4321', items: [{ id: 'B1', name: 'Objeto de Beto', base: 'Sapphire Ring', price: { amount: 1, currency: 'divine' } }] });
   ok((await user('PATCH', `/api/tiendas/${shopId}`, { account: 'Beto#4321' })).status === 200, 'se puede corregir el nombre de la cuenta');

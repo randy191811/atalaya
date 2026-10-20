@@ -586,6 +586,25 @@
     return out.filter(Boolean).join('\n');
   }
 
+  // Qué manda el mercado para un objeto, en claro y con el JSON debajo por si hay que
+  // pasárselo a Claude. Se usa igual desde Administrar que desde la ficha de un objeto.
+  function rawItemHtml(raw) {
+    if (!raw) return '<p class="diag-bad">El mercado no devolvió ningún objeto de tu tienda.</p>';
+    if (raw.noEsta) return '<p class="diag-bad">Ese objeto ya no está en los anuncios de tu tienda. Pulsa «Revisar ahora» y vuelve a probar.</p>';
+    const s = raw.resumen || {};
+    const fila = (arr, titulo, malSiVacio) => `<li class="${(arr || []).length ? 'ok' : (malSiVacio ? 'bad' : 'ok')}"><b>${titulo}: ${(arr || []).length}</b><span>${esc((arr || []).join(' · ') || 'ninguno')}</span></li>`;
+    return `<ul class="diag">
+        <li class="ok"><b>${esc(s.objeto || 'Objeto')} (${esc(s.rareza || '?')})</b><span>${s.revisados || 1} anuncios mirados, ${s.incompletos || 0} sin afijos</span></li>
+        ${fila(s.propiedades, 'Propiedades')}
+        ${fila(s.implicitos, 'Implícitos')}
+        ${fila(s.afijos, 'Afijos', true)}
+        <li class="ok"><b>Campos que manda el mercado</b><span>${esc((s.campos || []).join('  '))}</span></li>
+        <li class="ok"><b>Diccionario de estadísticas</b><span>${esc(s.diccionario || '')}</span></li>
+      </ul>
+      <p class="small muted">Copia este texto y pégaselo a Claude para que lo ajuste.</p>
+      <textarea readonly rows="12" style="width:100%;font-family:var(--mono,monospace);font-size:12px">${esc(JSON.stringify(raw.crudo, null, 2))}</textarea>`;
+  }
+
   function reviewBlock(l, rates) {
     const r = l.review;
     if (!r) return `<p class="small muted m0">Aún no se ha comparado con el mercado.</p>`;
@@ -601,8 +620,17 @@
       <div class="verdict"><div class="small muted">Lo tienes a la venta por</div><div class="verdict-price">${price(l.price_amount, l.price_currency)}</div>
       <div class="small muted">${l.ex != null ? '≈ ' + exFmt(l.ex, rates) + ' · ' : ''}${l.days ? `lleva ${l.days} días` : 'puesto hoy'}${l.stash_tab ? ' · pestaña ' + esc(l.stash_tab) : ''}</div></div>
       <div data-review>${reviewBlock(l, rates)}</div>
-      <div class="row"><button class="btn" data-compare>Comparar con el mercado ahora</button><button class="btn primary" data-appraise>Tasar con IA (${me.costs.texto} crédito)</button><button class="btn ghost" data-close>Cerrar</button></div></div>`,
+      <div class="row"><button class="btn" data-compare>Comparar con el mercado ahora</button><button class="btn primary" data-appraise>Tasar con IA (${me.costs.texto} crédito)</button><button class="btn ghost" data-close>Cerrar</button></div>
+      ${me.user.role === 'admin' ? '<details class="mt1"><summary class="small muted">Ver qué manda el mercado para este objeto</summary><div data-raw class="mt1"></div></details>' : ''}</div>`,
       (d) => {
+        const det = $('[data-raw]', d);
+        if (det) det.closest('details').addEventListener('toggle', async (ev) => {
+          if (!ev.target.open || det.dataset.hecho) return;
+          det.dataset.hecho = '1';
+          det.innerHTML = `<div class="working">${RUNES}<strong>Leyendo el objeto del mercado…</strong></div>`;
+          try { det.innerHTML = rawItemHtml((await api('GET', `/api/admin/depurar-objeto?listing=${l.id}`)).raw); }
+          catch (e) { det.innerHTML = `<p class="diag-bad">${esc(e.message)}</p>`; det.dataset.hecho = ''; }
+        });
         $('[data-appraise]', d).onclick = () => { sessionStorageSet('tasar-texto', itemToText(l)); d.close(); location.hash = '#/tasador'; };
         const bindCopy = () => { const c = $('[data-copy]', d); if (c) c.onclick = async () => { const inp = c.previousElementSibling; try { await navigator.clipboard.writeText(inp.value); toast('Copiado. Pégalo en la nota del objeto en el juego.', 'ok'); } catch { inp.select(); } }; };
         bindCopy();
@@ -1064,16 +1092,7 @@
       out.innerHTML = `<div class="working">${RUNES}<strong>Leyendo un objeto…</strong></div>`;
       try {
         const r = await api('GET', '/api/admin/depurar-objeto');
-        if (!r.raw) { out.innerHTML = '<p class="diag-bad">Tu tienda no devolvió ningún objeto.</p>'; ev.target.disabled = false; return; }
-        const s = r.raw.resumen || {};
-        const txt = JSON.stringify(r.raw.crudo, null, 2);
-        out.innerHTML = `<ul class="diag">
-            <li class="${(s.leido || []).length > 1 ? 'ok' : 'bad'}"><b>Características leídas: ${(s.leido || []).length}</b><span>${esc((s.leido || []).join(' · ') || 'ninguna')}</span></li>
-            <li class="ok"><b>Qué manda el mercado</b><span>${esc((s.campos || []).join('  '))}</span></li>
-            <li class="ok"><b>Diccionario de estadísticas</b><span>${esc(s.diccionario || '')}</span></li>
-          </ul>
-          <p class="small muted">Si algo no cuadra, copia el texto de abajo y pégaselo a Claude.</p>
-          <textarea readonly rows="14" style="width:100%;font-family:var(--mono,monospace);font-size:12px">${esc(txt)}</textarea>`;
+        out.innerHTML = rawItemHtml(r.raw);
       } catch (e) { out.innerHTML = `<p class="diag-bad">${esc(e.message)}</p>`; }
       ev.target.disabled = false;
     };

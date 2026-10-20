@@ -512,10 +512,15 @@ export async function handleApi(req, res, url, send, setCookie) {
       return send(200, await runDiagnostic(shop));
     }
     if (path === '/api/admin/depurar-objeto' && m === 'GET') {
-      if (tooMany(`depurar:${u.id}`, 6, 600)) throw new HttpError(429, 'Espera unos minutos.');
-      const shop = db.prepare('SELECT * FROM shops WHERE user_id = ? ORDER BY id LIMIT 1').get(u.id);
+      if (tooMany(`depurar:${u.id}`, 12, 600)) throw new HttpError(429, 'Espera unos minutos.');
+      // Con ?listing=<id> se mira ESE objeto; sin él, el primero que se vea incompleto.
+      const lid = Number(url.searchParams.get('listing')) || 0;
+      const listing = lid ? db.prepare('SELECT * FROM listings WHERE id = ? AND user_id = ?').get(lid, u.id) : null;
+      const shop = listing
+        ? db.prepare('SELECT * FROM shops WHERE id = ?').get(listing.shop_id)
+        : db.prepare('SELECT * FROM shops WHERE user_id = ? ORDER BY id LIMIT 1').get(u.id);
       if (!shop) throw bad('Añade primero una tienda.');
-      const raw = await debugRawShopItem(shop.poe_account, shop.league, decrypt(shop.poe_session_enc) || undefined);
+      const raw = await debugRawShopItem(shop.poe_account, shop.league, decrypt(shop.poe_session_enc) || undefined, listing ? listing.listing_key : null);
       return send(200, { raw });
     }
     if (path === '/api/admin/invitacion' && m === 'POST') {
