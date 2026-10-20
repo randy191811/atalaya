@@ -16,13 +16,28 @@ export function cleanMarkup(s) {
     .trim();
 }
 
-// Cada mod puede llegar como texto plano ("+30 to maximum Mana") o, según el objeto,
-// como {name:...} / {text:...}. Siempre lo pasamos a texto legible.
-function modText(m) {
+// ESTO ERA EL FALLO. Según la documentación de GGG, `implicitMods` y `explicitMods` NO son
+// listas de texto: son listas de objetos { description, flags }. Solo `enchantMods`,
+// `runeMods`, `bondedMods` y compañía son texto plano. Como aquí no se miraba `description`,
+// TODOS los afijos de TODOS los objetos se quedaban en nada, y en la ficha solo salía lo que
+// venía por otro lado (propiedades, requisitos, habilidad concedida, texto de sabor).
+export function modText(m) {
   if (typeof m === 'string') return cleanMarkup(m) || null;
   if (typeof m === 'number') return String(m);
-  if (m && typeof m === 'object') return cleanMarkup(m.name || m.text || m.mod || m.display || m.value || '') || null;
+  if (m && typeof m === 'object') {
+    return cleanMarkup(m.description || m.name || m.text || m.mod || m.display || m.value || '') || null;
+  }
   return null;
+}
+
+// `logbookMods` llega como { name, faction, mods:[texto] }: lo que interesa es `mods`.
+function flattenMods(arr) {
+  const out = [];
+  for (const m of Array.isArray(arr) ? arr : []) {
+    if (m && typeof m === 'object' && Array.isArray(m.mods)) out.push(...m.mods);
+    else out.push(m);
+  }
+  return out;
 }
 
 // El juego muestra primero lo que trae la base (implícitos, runas, encantamientos)
@@ -31,8 +46,8 @@ function modText(m) {
 // buscarlos a otro sitio en vez de dar la ficha por buena con una sola línea.
 const IMPLICIT_FIELDS = ['enchantMods', 'scourgeMods', 'implicitMods', 'runeMods'];
 const EXPLICIT_FIELDS = [
-  'fracturedMods', 'explicitMods', 'craftedMods', 'desecratedMods',
-  'veiledMods', 'crucibleMods', 'logbookMods', 'utilityMods',
+  'explicitMods', 'bondedMods', 'desecratedMods', 'veiledMods',
+  'crucibleMods', 'logbookMods', 'utilityMods', 'fracturedMods', 'craftedMods',
 ];
 const MOD_ORDER = [...IMPLICIT_FIELDS, ...EXPLICIT_FIELDS];
 // Listas de texto que NO son modificadores, para que el barrido general no las cuele.
@@ -134,12 +149,14 @@ export function collectModGroups(it) {
     if (t && !imp.includes(t) && !exp.includes(t)) arr.push(t);
   };
 
-  for (const k of IMPLICIT_FIELDS) if (Array.isArray(it[k])) it[k].forEach(into(imp));
-  for (const k of EXPLICIT_FIELDS) if (Array.isArray(it[k])) it[k].forEach(into(exp));
+  for (const k of IMPLICIT_FIELDS) if (Array.isArray(it[k])) flattenMods(it[k]).forEach(into(imp));
+  for (const k of EXPLICIT_FIELDS) if (Array.isArray(it[k])) flattenMods(it[k]).forEach(into(exp));
+  // Las gemas vaal y similares traen una segunda cara en `hybrid`.
+  if (it.hybrid && Array.isArray(it.hybrid.explicitMods)) flattenMods(it.hybrid.explicitMods).forEach(into(exp));
   // Cualquier otra lista de modificadores, incluida una que el juego añada mañana.
   for (const k of Object.keys(it)) {
     if (MOD_ORDER.includes(k) || NOT_MODS.has(k) || !Array.isArray(it[k])) continue;
-    if (/Mods$/.test(k) || /^(stats|affixes)$/.test(k)) it[k].forEach(into(exp));
+    if (/Mods$/.test(k) || /^(stats|affixes)$/.test(k)) flattenMods(it[k]).forEach(into(exp));
   }
   // Habilidades que concede la base (los cetros y varitas de PoE2 las llevan).
   if (Array.isArray(it.grantedSkills)) it.grantedSkills.forEach((p) => into(imp)(propText(p)));

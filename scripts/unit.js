@@ -58,6 +58,19 @@ ok(verdictFrom(null, 10, 20) === 'sin_datos' && verdictFrom(100, 0, 0) === 'sin_
 const { collectMods, normalizeEntry, spreadSample } = await import('../src/worker/trade2.js');
 ok(collectMods({ explicitMods: ['+10 a la vida'] })[0] === '+10 a la vida', 'lee modificadores en texto plano');
 ok(collectMods({ explicitMods: [{ name: '+10 a la vida' }, { text: 'Resistencia al fuego 30 %' }] }).length === 2, 'lee modificadores que llegan como objeto');
+// EL FALLO REAL: así es como el mercado manda de verdad los implícitos y los afijos.
+const comoElMercado = collectMods({
+  implicitMods: [{ description: 'Grants Skill: Level 18 Trinity', flags: {} }],
+  explicitMods: [
+    { description: '+120 to maximum Life', flags: {} },
+    { description: '35% increased Physical Damage', flags: { crafted: true } },
+  ],
+});
+ok(comoElMercado.length === 3 && comoElMercado[0] === 'Grants Skill: Level 18 Trinity' && comoElMercado[1] === '+120 to maximum Life' && comoElMercado[2] === '35% increased Physical Damage',
+  'lee los afijos tal como los manda el mercado: { description, flags }');
+ok(collectMods({ logbookMods: [{ name: 'Expedición', faction: { id: 'f1' }, mods: ['+5% de botín', '+2 a la calidad'] }] }).length === 2,
+  'los modificadores de bitácora vienen anidados y también se leen');
+ok(collectMods({ hybrid: { explicitMods: [{ description: 'cara vaal' }] } })[0] === 'cara vaal', 'y la segunda cara de las gemas vaal');
 const orden = collectMods({ explicitMods: ['explícito'], implicitMods: ['implícito'], runeMods: ['runa'], enchantMods: ['encantamiento'] });
 ok(orden[0] === 'encantamiento' && orden[1] === 'implícito' && orden[2] === 'runa' && orden[3] === 'explícito', 'respeta el orden en que el juego los muestra');
 ok(collectMods({ desecratedMods: ['mod nuevo del juego'] })[0] === 'mod nuevo del juego', 'lee cualquier campo que acabe en Mods, aunque sea nuevo');

@@ -29,9 +29,13 @@ const entry = (id, it) => {
   if (it.requirements) item.requirements = it.requirements;
   if (it.flavourText) item.flavourText = it.flavourText;
   if (it.descrText) item.descrText = it.descrText;
-  if (it.implicitMods) item.implicitMods = it.implicitMods;
   if (it.extendedMods) item.extended = { mods: it.extendedMods };
-  item[it.modsField || 'explicitMods'] = it.mods || [];
+  // Como el mercado de verdad: implicitMods y explicitMods son objetos { description, flags };
+  // enchantMods, runeMods y compañía son texto plano.
+  const asItemMod = (xs) => xs.map((x) => (typeof x === 'string' ? { description: x, flags: {} } : x));
+  if (it.implicitMods) item.implicitMods = asItemMod(it.implicitMods);
+  const campo = it.modsField || 'explicitMods';
+  item[campo] = /^(implicitMods|explicitMods)$/.test(campo) ? asItemMod(it.mods || []) : (it.mods || []);
   return {
     id,
     listing: { price: it.price, account: { name: 'tester' }, stash: { name: it.stash || 'Tienda' }, indexed: new Date().toISOString() },
