@@ -1,0 +1,8 @@
+# Pega este bloque en tu Caddyfile (cambia TU-DOMINIO). Caddy consigue el candado https solo.
+TU-DOMINIO {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+	}
+}

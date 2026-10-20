@@ -1,0 +1,12 @@
+{
+  "name": "atalaya",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Atalaya: vigila tu tienda de Path of Exile 2, te avisa de cada venta y tasa objetos con IA. Sin paquetes externos: solo Node 22.13+.",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server/index.js",
+    "test": "node --disable-warning=ExperimentalWarning scripts/unit.js && node --disable-warning=ExperimentalWarning scripts/e2e.js"
+  }
+}

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Atalaya</title>
+<meta name="theme-color" content="#12161c">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="stylesheet" href="/styles.css?v=20261019b">
+<script defer src="/app.js?v=20261019b"></script>
+</head>
+<body>
+<svg class="sr" aria-hidden="true">
+  <symbol id="i-tower" viewBox="0 0 64 64"><path d="M22 54h20l-3-26h-14z" fill="#2c3542" stroke="#cdb57f" stroke-width="2.5" stroke-linejoin="round"/><path d="M19 28h26l-2-8H21z" fill="#cdb57f"/><path d="M21 20v-6h4v3h4v-3h6v3h4v-3h4v6" fill="none" stroke="#cdb57f" stroke-width="2.5" stroke-linejoin="round"/><path d="M29 36h6v8h-6z" fill="#c67a3c"/></symbol>
+  <symbol id="i-shop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 9h16l-1-4H5zM5 9v10h14V9M9 19v-5h6v5"/></symbol>
+  <symbol id="i-sales" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 14h6M9 18h3"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 4v16M7 20h10M5 7h14M5 7l-3 6a3 3 0 0 0 6 0zM19 7l-3 6a3 3 0 0 0 6 0z"/></symbol>
+  <symbol id="i-market" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 19h18M5 15l4-5 4 3 6-7"/></symbol>
+  <symbol id="i-wish" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="8" cy="14" r="4"/><path d="m11 11 9-9M17 5l2 2M15 7l2 2"/></symbol>
+  <symbol id="i-coin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/></symbol>
+  <symbol id="k-generic" viewBox="0 0 48 48"><path d="M24 5l15 19-15 19L9 24z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="k-ring" viewBox="0 0 48 48"><circle cx="24" cy="28" r="13" fill="none" stroke="currentColor" stroke-width="3"/><path d="M18 13l6-7 6 7-6 4z" fill="currentColor"/></symbol>
+  <symbol id="k-amulet" viewBox="0 0 48 48"><path d="M10 6c2 12 8 18 14 20 6-2 12-8 14-20" fill="none" stroke="currentColor" stroke-width="2"/><path d="M24 24l8 9-8 10-8-10z" fill="currentColor" fill-opacity=".35" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="k-belt" viewBox="0 0 48 48"><rect x="4" y="18" width="40" height="12" rx="3" fill="currentColor" fill-opacity=".15" stroke="currentColor" stroke-width="2"/><rect x="19" y="15" width="10" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2.5"/></symbol>
+  <symbol id="k-helm" viewBox="0 0 48 48"><path d="M8 30c0-12 7-21 16-21s16 9 16 21v8H30v-8h-12v8H8z" fill="currentColor" fill-opacity=".15" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M24 9v12" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="k-gloves" viewBox="0 0 48 48"><path d="M14 42V22l-4-6 3-2 5 5V8h3v12V6h3v14V8h3v12-8h3v18c0 6-3 12-8 12z" fill="currentColor" fill-opacity=".15" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="k-boots" viewBox="0 0 48 48"><path d="M14 6h12v22l14 6v8H10l2-8z" fill="currentColor" fill-opacity=".15" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="k-armour" viewBox="0 0 48 48"><path d="M16 6l8 4 8-4 10 6-4 10h-4v20H14V22h-4L6 12z" fill="currentColor" fill-opacity=".15" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="k-shield" viewBox="0 0 48 48"><path d="M24 5l16 6c0 16-6 26-16 32C14 37 8 27 8 11z" fill="currentColor" fill-opacity=".15" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M24 12v24" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="k-bow" viewBox="0 0 48 48"><path d="M14 4c16 8 16 32 0 40" fill="none" stroke="currentColor" stroke-width="3"/><path d="M14 4v40M8 24h34l-6-5m6 5l-6 5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="k-weapon" viewBox="0 0 48 48"><path d="M40 4l4 4-26 26-4-4z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2"/><path d="M10 28l10 10M8 40l6-6" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
+  <symbol id="k-flask" viewBox="0 0 48 48"><path d="M19 4h10v12l9 18c2 5-1 10-7 10H17c-6 0-9-5-7-10l9-18z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="k-jewel" viewBox="0 0 48 48"><path d="M24 4l18 14-7 24H13L6 18z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M6 18h36M24 4l-6 14 6 24 6-24z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+</svg>
+
+<!-- Acceso (se muestra si no hay sesión) -->
+<section id="auth" class="auth hidden">
+  <div class="auth-box">
+    <a class="brand" href="/"><svg><use href="#i-tower"/></svg>Atalaya</a>
+    <form id="login-form" class="panel">
+      <h2>Entrar</h2>
+      <div class="field"><label for="li-email">Correo</label><input id="li-email" name="email" type="email" autocomplete="email" required></div>
+      <div class="field"><label for="li-pass">Contraseña</label><input id="li-pass" name="password" type="password" autocomplete="current-password" required></div>
+      <button class="btn primary" type="submit">Entrar</button>
+      <p class="auth-switch">¿No tienes cuenta? <a href="#/registro">Crear cuenta gratis</a></p>
+    </form>
+    <form id="register-form" class="panel hidden">
+      <h2>Crear cuenta</h2>
+      <div class="field"><label for="re-name">Tu nombre</label><input id="re-name" name="name" autocomplete="nickname" required minlength="2"></div>
+      <div class="field"><label for="re-email">Correo</label><input id="re-email" name="email" type="email" autocomplete="email" required></div>
+      <div class="field"><label for="re-pass">Contraseña (mínimo 10 caracteres)</label><input id="re-pass" name="password" type="password" autocomplete="new-password" required minlength="10"></div>
+      <div class="field hidden" id="re-invite-wrap"><label for="re-invite">Código de invitación</label><input id="re-invite" name="inviteToken"></div>
+      <button class="btn primary" type="submit">Crear cuenta</button>
+      <p class="small muted mt1">Al crearla aceptas los <a href="/terminos.html">términos</a> y la <a href="/privacidad.html">política de privacidad</a>.</p>
+      <p class="auth-switch">¿Ya tienes cuenta? <a href="#/entrar">Entrar</a></p>
+    </form>
+  </div>
+</section>
+
+<!-- La aplicación -->
+<div id="app" class="app hidden">
+  <nav class="rail" aria-label="Secciones">
+    <a class="brand" href="/"><svg><use href="#i-tower"/></svg>Atalaya</a>
+    <span class="rail-ind" aria-hidden="true"></span>
+    <a class="nav" href="#/tienda" data-v="tienda"><svg><use href="#i-shop"/></svg>Tienda</a>
+    <a class="nav" href="#/ventas" data-v="ventas"><svg><use href="#i-sales"/></svg>Ventas<span class="dot hidden" data-unseen></span></a>
+    <a class="nav" href="#/tasador" data-v="tasador"><svg><use href="#i-scale"/></svg>Tasador</a>
+    <a class="nav" href="#/mercado" data-v="mercado"><svg><use href="#i-market"/></svg>Mercado</a>
+    <a class="nav" href="#/deseos" data-v="deseos"><svg><use href="#i-wish"/></svg>Deseos</a>
+    <a class="nav" href="#/cuenta" data-v="cuenta"><svg><use href="#i-user"/></svg>Cuenta y plan</a>
+    <a class="nav hidden" href="#/admin" data-v="admin" data-admin><svg><use href="#i-key"/></svg>Administrar</a>
+    <div class="foot">No afiliada ni respaldada por Grinding Gear Games.</div>
+  </nav>
+  <div>
+    <header class="top">
+      <h1 id="view-title">Tienda</h1>
+      <span class="demo-badge" title="Los pagos son simulados">MODO DEMO</span>
+      <a class="credits-pill" href="#/cuenta" id="credits-pill" title="Créditos para el tasador"><svg><use href="#i-coin"/></svg><span class="num" id="credits-n">–</span><span class="lbl"> créditos</span></a>
+    </header>
+    <main id="view" class="view" tabindex="-1"></main>
+  </div>
+  <nav class="mobile-nav" aria-label="Secciones">
+    <a href="#/tienda" data-v="tienda"><svg><use href="#i-shop"/></svg>Tienda</a>
+    <a href="#/ventas" data-v="ventas"><svg><use href="#i-sales"/></svg>Ventas</a>
+    <a href="#/tasador" data-v="tasador"><svg><use href="#i-scale"/></svg>Tasador</a>
+    <a href="#/mercado" data-v="mercado"><svg><use href="#i-market"/></svg>Mercado</a>
+    <a href="#/deseos" data-v="deseos"><svg><use href="#i-wish"/></svg>Deseos</a>
+    <a href="#/cuenta" data-v="cuenta"><svg><use href="#i-user"/></svg>Cuenta</a>
+  </nav>
+</div>
+
+<datalist id="dl-ligas"></datalist>
+<dialog id="dlg"></dialog>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<noscript><p class="panel">Atalaya necesita JavaScript activado.</p></noscript>
+</body>
+</html>
