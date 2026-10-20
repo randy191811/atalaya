@@ -27,6 +27,7 @@ const entry = (id, it) => {
   if (it.corrupted) item.corrupted = true;
   if (it.properties) item.properties = it.properties;
   if (it.requirements) item.requirements = it.requirements;
+  if (it.grantedSkills) item.grantedSkills = it.grantedSkills;
   if (it.flavourText) item.flavourText = it.flavourText;
   if (it.descrText) item.descrText = it.descrText;
   if (it.extendedMods) item.extended = { mods: it.extendedMods };

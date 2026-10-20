@@ -128,7 +128,7 @@ const maza = {
 const fichaMaza = itemDetail(maza);
 ok(fichaMaza.properties.length === 3 && fichaMaza.properties[0] === 'One Hand Mace' && fichaMaza.properties[1] === 'Physical Damage: 65-79',
   'la ficha trae las propiedades (daño, ataques por segundo…) ya legibles');
-ok(fichaMaza.requirements[0] === 'Requiere Level: 45, 98 Str', 'y los requisitos en una línea');
+ok(fichaMaza.requirements[0] === 'Requiere: Level 45, 98 Str', 'y los requisitos en una línea, como el juego');
 ok(fichaMaza.implicits.length === 1 && fichaMaza.mods.length === 2 && fichaMaza.itemLevel === 67 && fichaMaza.corrupted === true,
   'implícitos y afijos van separados, con nivel de objeto y corrupción');
 ok(fichaMaza.flavour[0] === 'Lo que cae, cae entero.', 'y el texto de sabor de los únicos');
@@ -138,6 +138,35 @@ const fichaJoya = itemDetail(joya);
 ok(fichaJoya.mods.length === 1 && fichaJoya.descr[0] === 'Colócala en un engarce de joya asignado.',
   'una joya muestra sus modificadores Y cómo se usa, no solo una de las dos cosas');
 ok(itemDetail({ identified: false, baseType: 'Dueling Wand' }).unidentified === true, 'marca los objetos sin identificar');
+
+// El cetro «Sol Bane» tal cual lo enseña el juego, bloque por bloque.
+const cetro = itemDetail({
+  name: 'Sol Bane', baseType: 'Stoic Sceptre', rarity: 'Rare',
+  properties: [
+    { name: 'Sceptre', values: [], displayMode: 0 },
+    { name: 'Quality', values: [['+3%', 1]], displayMode: 0 },
+    { name: 'Spirit', values: [['114', 0]], displayMode: 0 },
+  ],
+  requirements: [
+    { name: 'Level', values: [['31', 0]], displayMode: 0 },
+    { name: 'Str', values: [['20', 0]], displayMode: 1 },
+    { name: 'Int', values: [['47', 0]], displayMode: 1 },
+  ],
+  grantedSkills: [{ name: 'Grants Skill', values: [['Level 9 Discipline', 0]], displayMode: 0 }],
+  implicitMods: [{ description: '11% increased Spirit', flags: {} }],
+  explicitMods: [
+    { description: '+18 to maximum Mana', flags: {} },
+    { description: '15% reduced Attribute Requirements', flags: {} },
+    { description: '+14 to Strength', flags: {} },
+    { description: 'Minions have 30% increased maximum Life', flags: {} },
+  ],
+});
+ok(cetro.properties.join(' | ') === 'Sceptre | Quality: +3% | Spirit: 114', 'cetro: las propiedades salen igual que en el juego');
+ok(cetro.requirements[0] === 'Requiere: Level 31, 20 Str, 47 Int', 'cetro: «Requiere: Level 31, 20 Str, 47 Int», sin dos puntos tras cada nombre');
+ok(cetro.granted.length === 1 && cetro.granted[0] === 'Grants Skill: Level 9 Discipline', 'cetro: la habilidad concedida va en su propio bloque');
+ok(cetro.implicits.length === 1 && cetro.implicits[0] === '11% increased Spirit', 'cetro: el implícito va separado de los afijos');
+ok(cetro.mods.length === 4 && cetro.mods[0] === '+18 to maximum Mana' && cetro.mods[3] === 'Minions have 30% increased maximum Life',
+  'cetro: los cuatro afijos, en su orden');
 const norm = normalizeEntry({ id: 'x1', item: { name: 'Objeto', baseType: 'Base', rarity: 'Unique', ilvl: 81, corrupted: true, explicitMods: ['+1 a todo'] }, listing: { price: { amount: 3, currency: 'divine' } } });
 ok(norm.item_level === 81 && norm.corrupted === 1 && norm.stats[0] === '+1 a todo' && norm.price_amount === 3, 'normaliza nivel de objeto, corrupción, precio y modificadores');
 ok(normalizeEntry({ id: 'x2', item: { name: 'A' } }).stats.length === 0 && normalizeEntry({ id: 'x3' }) === null, 'un objeto sin datos no revienta la lectura');

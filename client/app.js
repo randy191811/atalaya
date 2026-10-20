@@ -165,15 +165,25 @@
     const twoLines = (it.rarity === 'Rare' || it.rarity === 'Unique') && it.base && it.base !== it.name;
     const title = twoLines ? `${esc(it.name)}<br>${esc(it.base)}` : esc(it.name || it.base || 'Objeto');
     const blocks = [];
+    // En el juego la etiqueta de una propiedad va en gris y su valor resaltado
+    // («Quality: +3%», «Spirit: 114»). Se separa por los primeros dos puntos.
+    const propLine = (x) => {
+      const i = x.indexOf(': ');
+      return i > 0
+        ? `<div class="tip-prop">${esc(x.slice(0, i + 1))} <b>${esc(x.slice(i + 2))}</b></div>`
+        : `<div class="tip-prop">${esc(x)}</div>`;
+    };
     const block = (arr, cls) => {
-      const h = (arr || []).map(txtOf).filter(Boolean).map((x) => `<div class="${cls}">${esc(x)}</div>`).join('');
+      const xs = (arr || []).map(txtOf).filter(Boolean);
+      const h = cls === 'tip-prop' ? xs.map(propLine).join('') : xs.map((x) => `<div class="${cls}">${esc(x)}</div>`).join('');
       if (h) blocks.push(h);
     };
     const d = it.detail;
     if (d) {
-      block(d.properties, 'tip-meta');
+      block(d.properties, 'tip-prop');
       block([...(d.requirements || []), ...(d.sockets || [])], 'tip-meta');
       if (d.itemLevel) blocks.push(`<div class="tip-meta">Nivel de objeto: ${esc(d.itemLevel)}</div>`);
+      block(d.granted, 'tip-mod');
       block(d.implicits, 'tip-mod');
       block(d.mods, 'tip-mod');
       block(d.descr, 'tip-meta');
@@ -580,6 +590,7 @@
     part(d.properties);
     part(d.requirements);
     if (l.item_level) out.push('--------', `Item Level: ${l.item_level}`);
+    part(d.granted);
     part(d.implicits);
     part((d.mods && d.mods.length ? d.mods : l.stats) || []);
     if (l.corrupted) out.push('--------', 'Corrupted');

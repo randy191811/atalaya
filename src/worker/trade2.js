@@ -77,6 +77,23 @@ export function propText(p) {
   return `${name}: ${vals.join(', ')}`;
 }
 
+// Los requisitos se escriben distinto que las propiedades: el juego pone «Level 31» y
+// «20 Str», sin los dos puntos, y los junta todos en una línea «Requiere: …».
+export function reqText(p) {
+  if (!p || typeof p !== 'object') return null;
+  const name = cleanMarkup(p.name);
+  const vals = Array.isArray(p.values)
+    ? p.values.map((v) => cleanMarkup(Array.isArray(v) ? v[0] : v)).filter((v) => v !== '')
+    : [];
+  if (!name && !vals.length) return null;
+  if (!vals.length) return name || null;
+  if (!name) return vals.join(', ');
+  if (Number(p.displayMode) === 3 || /%\d/.test(name)) {
+    return name.replace(/%(\d)/g, (_, i) => String(vals[Number(i)] ?? '')).trim();
+  }
+  return Number(p.displayMode) === 1 ? `${vals.join(', ')} ${name}` : `${name} ${vals.join(', ')}`;
+}
+
 // Diccionario de estadísticas del mercado: convierte un identificador como
 // "explicit.stat_3299347043" en su texto ("#% increased Spell Damage"). Solo se descarga
 // si hace falta de verdad, y se guarda un día en memoria.
@@ -144,9 +161,10 @@ export function needsStatsDict(entry) {
 export function collectModGroups(it) {
   const imp = [];
   const exp = [];
+  const granted = [];
   const into = (arr) => (v) => {
     const t = modText(v);
-    if (t && !imp.includes(t) && !exp.includes(t)) arr.push(t);
+    if (t && !imp.includes(t) && !exp.includes(t) && !granted.includes(t)) arr.push(t);
   };
 
   for (const k of IMPLICIT_FIELDS) if (Array.isArray(it[k])) flattenMods(it[k]).forEach(into(imp));
@@ -158,29 +176,30 @@ export function collectModGroups(it) {
     if (MOD_ORDER.includes(k) || NOT_MODS.has(k) || !Array.isArray(it[k])) continue;
     if (/Mods$/.test(k) || /^(stats|affixes)$/.test(k)) flattenMods(it[k]).forEach(into(exp));
   }
-  // Habilidades que concede la base (los cetros y varitas de PoE2 las llevan).
-  if (Array.isArray(it.grantedSkills)) it.grantedSkills.forEach((p) => into(imp)(propText(p)));
+  // Habilidades que concede la base (los cetros y varitas de PoE2 las llevan). El juego
+  // las enseña en su propio bloque, encima del implícito, así que van aparte.
+  if (Array.isArray(it.grantedSkills)) it.grantedSkills.forEach((p) => into(granted)(propText(p)));
 
   // Si el objeto tiene afijos pero el mercado no mandó su texto, se reconstruye desde
   // el bloque extendido. Esto es lo que rescata los modificadores de los raros.
   if (!exp.length) extendedGroup(it, ['explicit', 'crafted', 'fractured', 'veiled', 'desecrated']).forEach(into(exp));
   if (!imp.length) extendedGroup(it, ['implicit', 'enchant', 'rune', 'scourge']).forEach(into(imp));
-  return { imp, exp };
+  return { imp, exp, granted };
 }
 
 // Reúne TODO el texto del objeto, pase lo que pase con el nombre de los campos.
 // Se devuelve en el orden del juego: primero lo de la base, luego lo propio del objeto.
 export function collectMods(it) {
-  const { imp, exp } = collectModGroups(it);
+  const { imp, exp, granted } = collectModGroups(it);
   // Si de verdad no hay ningún modificador (tabletas, monedas, gemas…), se usan sus
   // propiedades y su descripción para no dejar la lista en blanco.
-  if (!imp.length && !exp.length) {
+  if (!imp.length && !exp.length && !granted.length) {
     const otros = [];
     if (Array.isArray(it.properties)) for (const p of it.properties) { const t = propText(p); if (t && !otros.includes(t)) otros.push(t); }
     for (const k of ['descrText', 'secDescrText']) { const t = cleanMarkup(it[k]); if (t && !otros.includes(t)) otros.push(t); }
     return otros;
   }
-  return [...imp, ...exp];
+  return [...granted, ...imp, ...exp];
 }
 
 // La ficha completa, con los mismos bloques y en el mismo orden que el juego.
@@ -195,16 +214,17 @@ export function itemDetail(it) {
     }
     return out;
   };
-  const { imp, exp } = collectModGroups(it);
-  const req = lines(it.requirements, propText);
+  const { imp, exp, granted } = collectModGroups(it);
+  const req = lines(it.requirements, reqText);
   const sockets = Array.isArray(it.sockets) ? it.sockets.length : 0;
   const descr = [];
   for (const k of ['descrText', 'secDescrText']) { const t = cleanMarkup(it[k]); if (t && !descr.includes(t)) descr.push(t); }
   return {
-    properties: lines(it.properties, propText),
-    requirements: req.length ? [`Requiere ${req.join(', ')}`] : [],
+    properties: [...lines(it.properties, propText), ...lines(it.notableProperties, propText)],
+    requirements: req.length ? [`Requiere: ${req.join(', ')}`] : [],
     sockets: sockets ? [`${sockets} ${sockets === 1 ? 'engarce' : 'engarces'}`] : [],
     itemLevel: Number(it.ilvl || it.itemLevel) || null,
+    granted,
     implicits: imp,
     mods: exp,
     descr,
@@ -237,7 +257,10 @@ export function normalizeEntry(entry) {
   const name = (it.name || it.typeLine || '').trim();
   const base = (it.baseType || it.typeLine || '').trim();
   const mods = collectMods(it);
-  const fp = crypto.createHash('sha1').update([name, base, it.rarity || '', ...mods].join('|')).digest('hex').slice(0, 16);
+  // La huella identifica al objeto entre lecturas (para ver si solo cambió de precio).
+  // Se ordena antes de calcularla: así cambiar el ORDEN en que se pintan los modificadores
+  // no hace que un objeto parezca otro distinto.
+  const fp = crypto.createHash('sha1').update([name, base, it.rarity || '', ...[...mods].sort()].join('|')).digest('hex').slice(0, 16);
   return {
     key: String(entry.id),
     name: name || base || 'Objeto',

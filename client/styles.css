@@ -184,6 +184,8 @@ details[open] > summary::before { transform: rotate(45deg); }
 .tip-meta { color: #a49d8c; }
 .tip-corrupt { color: #e04444; }
 .tip-flavour { color: #b79a6b; font-style: italic; }
+.tip-prop { color: #8c8577; }
+.tip-prop b { color: #dcd3c2; font-weight: 500; }
 
 /* Materialización: aparece de abajo arriba con un barrido de luz */
 .materialize { animation: materialize .75s var(--ease) both; }

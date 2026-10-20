@@ -284,7 +284,8 @@ try {
     // Maza rara: tiene que salir TODO (propiedades, requisitos, implícito y afijos), no una cosa u otra.
     { id: 'R4', name: 'Torment Burst', base: 'Structured Hammer', price: { amount: 3, currency: 'exalted' }, ilvl: 67,
       properties: [{ name: '[Mace|One Hand Mace]', values: [] }, { name: '[Physical] Damage', values: [['65-79', 1]] }],
-      requirements: [{ name: 'Level', values: [['45', 0]], displayMode: 0 }],
+      requirements: [{ name: 'Level', values: [['45', 0]], displayMode: 0 }, { name: 'Str', values: [['109', 0]], displayMode: 1 }],
+      grantedSkills: [{ name: 'Grants Skill', values: [['Level 9 Discipline', 0]], displayMode: 0 }],
       implicitMods: ['+15 to Strength'],
       mods: ['+120 to maximum Life'] },
   ] });
@@ -304,7 +305,9 @@ try {
   const fm = (maza && maza.detail) || {};
   ok(fm.properties && fm.properties[0] === 'One Hand Mace' && fm.properties[1] === 'Physical Damage: 65-79',
     'la maza trae sus propiedades sin el marcado interno del juego');
-  ok(fm.requirements && fm.requirements[0] === 'Requiere Level: 45' && fm.itemLevel === 67, 'con sus requisitos y su nivel de objeto');
+  ok(fm.requirements && fm.requirements[0] === 'Requiere: Level 45, 109 Str' && fm.itemLevel === 67, 'con sus requisitos en una línea y su nivel de objeto');
+  ok(fm.granted && fm.granted[0] === 'Grants Skill: Level 9 Discipline' && !(fm.implicits || []).includes('Grants Skill: Level 9 Discipline'),
+    'la habilidad concedida va en su propio bloque, no mezclada con el implícito');
   ok(fm.implicits && fm.implicits[0] === '+15 to Strength' && fm.mods && fm.mods[0] === '+120 to maximum Life',
     'y además sus modificadores: la ficha trae todo, no una cosa u otra');
 
