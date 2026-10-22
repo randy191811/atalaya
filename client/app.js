@@ -186,9 +186,15 @@
       block(d.properties, 'tip-prop');
       block([...(d.requirements || []), ...(d.sockets || [])], 'tip-meta');
       if (d.itemLevel) block([`Nivel de objeto: ${d.itemLevel}`], 'tip-meta');
+      block(d.enchant, 'tip-mod');
       block(d.granted, 'tip-mod');
       block(d.implicits, 'tip-mod');
+      block(d.fractured, 'tip-mod');
       block(d.mods, 'tip-mod');
+      block(d.crafted, 'tip-mod');
+      // Si el mercado dice que el objeto tiene afijos pero no manda su texto, se avisa
+      // en gris. Nunca se rellena el bloque azul con el nombre interno del afijo.
+      if (d.sinTexto > 0) blocks.push(`<div class="tip-falta">El mercado no envió el texto de ${esc(d.sinTexto)} ${d.sinTexto === 1 ? 'modificador' : 'modificadores'} de este objeto.</div>`);
       block(d.descr, 'tip-meta');
       block(d.flavour, 'tip-flavour');
       if (d.unidentified) blocks.push('<div class="tip-meta">Sin identificar</div>');
@@ -595,9 +601,12 @@
     part(d.properties);
     part(d.requirements);
     if (l.item_level) out.push('--------', `Item Level: ${l.item_level}`);
+    part(d.enchant);
     part(d.granted);
     part(d.implicits);
+    part(d.fractured);
     part((d.mods && d.mods.length ? d.mods : l.stats) || []);
+    part(d.crafted);
     if (l.corrupted) out.push('--------', 'Corrupted');
     return out.filter(Boolean).join('\n');
   }

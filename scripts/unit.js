@@ -55,7 +55,7 @@ ok(verdictFor(500, [100, 110, 120, 480, 500, 2000]).verdict === 'en_precio', 'la
 ok(verdictFrom(null, 10, 20) === 'sin_datos' && verdictFrom(100, 0, 0) === 'sin_datos', 'sin mediana no hay veredicto');
 
 // Lectura de objetos del mercado: los modificadores deben leerse sea cual sea el campo que los traiga.
-const { collectMods, normalizeEntry, spreadSample } = await import('../src/worker/trade2.js');
+const { collectMods, normalizeEntry, spreadSample, itemDetail: itemDetailPre } = await import('../src/worker/trade2.js');
 ok(collectMods({ explicitMods: ['+10 a la vida'] })[0] === '+10 a la vida', 'lee modificadores en texto plano');
 ok(collectMods({ explicitMods: [{ name: '+10 a la vida' }, { text: 'Resistencia al fuego 30 %' }] }).length === 2, 'lee modificadores que llegan como objeto');
 // EL FALLO REAL: así es como el mercado manda de verdad los implícitos y los afijos.
@@ -78,39 +78,94 @@ ok(collectMods({ sanctumMods: ['inventado'] })[0] === 'inventado', 'un campo de 
 const tableta = collectMods({ properties: [{ name: 'Nivel de monstruo', values: [['79', 0]] }], descrText: 'Usar en un mapa' });
 ok(tableta.includes('Nivel de monstruo: 79') && tableta.includes('Usar en un mapa'), 'sin modificadores, usa propiedades y descripción (tabletas y monedas)');
 ok(collectMods({ explicitMods: ['+5 a la vida'], properties: [{ name: 'Calidad', values: [['+20%', 0]] }] }).length === 1, 'si ya hay modificadores, no añade propiedades de relleno');
-ok(collectMods({ extended: { mods: { explicit: [{ name: 'del bloque extendido' }] } } })[0] === 'del bloque extendido', 'último recurso: el bloque extendido');
-
-// El fallo real visto en la página: una varita rara con su implícito pero SIN el texto de
-// sus afijos. Antes se daba la ficha por buena con una sola línea; ahora se reconstruyen.
-const { setStatsDict, needsStatsDict, inventoryOf } = await import('../src/worker/trade2.js');
-const varita = {
+// ═══ TEST «TORMENT WEAVER»: nunca, jamás, los nombres internos de los afijos ═══
+// extended.mods trae el nombre del afijo («Occultist's», «of the Sage»), su grado y sus
+// magnitudes. Eso es metadato para los filtros de búsqueda, NO lo que ve el jugador.
+const { inventoryOf, missingText, countExtended } = await import('../src/worker/trade2.js');
+const varitaSinTexto = {
   name: 'Torment Weaver', baseType: 'Dueling Wand', rarity: 'Rare', ilvl: 81,
-  implicitMods: ['Grants Skill: Level 18 Spellslinger'],
+  implicitMods: [{ description: 'Grants Skill: Level 18 Spellslinger', flags: {} }],
   extended: { mods: { explicit: [
-    { name: 'Tyrannical', magnitudes: [{ hash: 'explicit.stat_1', min: '120', max: '120' }] },
-    { name: 'of the Sorcerer', magnitudes: [{ hash: 'explicit.stat_2', min: '30', max: '38' }] },
+    { name: "Ruthless", tier: 'P1', magnitudes: [{ hash: 'explicit.stat_1', min: '120', max: '120' }] },
+    { name: "Occultist's", tier: 'P2', magnitudes: [{ hash: 'explicit.stat_2', min: '30', max: '38' }] },
+    { name: 'of the Sage', tier: 'S1', magnitudes: [{ hash: 'explicit.stat_3', min: '12', max: '12' }] },
   ] } },
 };
-setStatsDict(null);
-ok(needsStatsDict({ item: varita }) === true, 'detecta que a un raro le falta el texto de sus afijos');
-ok(needsStatsDict({ item: { explicitMods: ['+1'], extended: { mods: { explicit: [{}] } } } }) === false, 'si el texto ya viene, no se pide el diccionario');
-const sinDicc = collectMods(varita);
-ok(sinDicc.length === 3 && sinDicc[0] === 'Grants Skill: Level 18 Spellslinger' && sinDicc[1] === 'Tyrannical: 120' && sinDicc[2] === 'of the Sorcerer: 30-38',
-  'sin diccionario, sale el nombre del afijo CON su valor: ninguna estadística se pierde');
-setStatsDict(new Map([['explicit.stat_1', '#% increased Spell Damage'], ['explicit.stat_2', '+# to maximum Mana']]));
-const conDicc = collectMods(varita);
-ok(conDicc.length === 3 && conDicc[0] === 'Grants Skill: Level 18 Spellslinger' && conDicc[1] === '120% increased Spell Damage' && conDicc[2] === '+30-38 to maximum Mana',
-  'con el diccionario se escriben las características completas, implícito primero');
-setStatsDict(null);
-ok(inventoryOf(varita).includes('implicitMods[1]') && inventoryOf(varita).includes('extended.mods.explicit[2]'), 'el resumen dice qué campos manda el mercado');
-// Media tirada: si solo una estadística está en el diccionario, la otra NO puede desaparecer.
-setStatsDict(new Map([['explicit.stat_1', '#% increased Spell Damage']]));
-const medias = collectMods(varita);
-ok(medias.length === 3 && medias[1] === '120% increased Spell Damage' && medias[2] === 'of the Sorcerer: 30-38',
-  'con el diccionario a medias, lo que no se puede escribir sale con su nombre y su valor');
-const { missingStats } = await import('../src/worker/trade2.js');
-ok(missingStats(varita) === 1, 'y se cuenta cuántas estadísticas quedaron sin texto');
-setStatsDict(null);
+const vst = itemDetailPre(varitaSinTexto);
+const NOMBRES_AFIJO = ["Ruthless", "Occultist's", 'of the Sage', 'Blue', 'of Calamity', 'of Conflagration', 'Tyrannical'];
+const textoVarita = JSON.stringify([...(vst.implicits || []), ...(vst.mods || []), ...(vst.crafted || []), ...(vst.fractured || [])]);
+ok(!NOMBRES_AFIJO.some((n) => textoVarita.includes(n)), 'TEST TORMENT WEAVER: ningún nombre interno de afijo llega a la tarjeta');
+ok(vst.mods.length === 0, 'sin texto de afijos, la sección azul se queda vacía (no se rellena)');
+ok(vst.implicits.length === 1 && vst.implicits[0] === 'Grants Skill: Level 18 Spellslinger', 'lo que sí viene con texto se muestra igual');
+ok(countExtended(varitaSinTexto) === 3 && vst.sinTexto === 3 && missingText(varitaSinTexto) === 3,
+  'y se cuenta cuántos afijos quedaron sin texto, para avisar en gris fuera del bloque azul');
+
+// El mismo objeto CON el texto que manda el mercado: salen los mods, no los nombres.
+const varitaConTexto = {
+  ...varitaSinTexto,
+  explicitMods: [
+    { description: '+73 to maximum Mana', flags: {} },
+    { description: '+28 to Intelligence', flags: {} },
+    { description: 'Adds 15 to 28 Fire Damage to Spells', flags: {} },
+  ],
+};
+const vct = itemDetailPre(varitaConTexto);
+ok(vct.mods.join(' | ') === '+73 to maximum Mana | +28 to Intelligence | Adds 15 to 28 Fire Damage to Spells',
+  'TEST TORMENT WEAVER: con explicitMods salen los mods reales con su valor rodado');
+ok(!NOMBRES_AFIJO.some((n) => vct.mods.join(' ').includes(n)), 'y ni un nombre de afijo se cuela entre ellos');
+ok(vct.sinTexto === 0, 'con el texto completo no hay aviso de nada que falte');
+ok(!/\(\d+[–-]\d+\)/.test(vct.mods.join(' ')), 'un objeto concreto no muestra rangos: muestra su tirada');
+
+// TEST DE VACÍO: un objeto sin explicitMods no tiene sección azul.
+const vacio = itemDetailPre({ name: 'Base', baseType: 'Dueling Wand', rarity: 'Normal', properties: [{ name: 'Wand', values: [] }] });
+ok(vacio.mods.length === 0 && vacio.implicits.length === 0 && vacio.crafted.length === 0 && vacio.sinTexto === 0,
+  'TEST DE VACÍO: sin modificadores no hay sección de modificadores');
+ok(vacio.properties.length === 1, 'pero sus propiedades sí se muestran');
+
+// Cada grupo en su bloque, como el juego.
+const grupos = itemDetailPre({
+  enchantMods: ['Encantamiento'],
+  implicitMods: [{ description: 'Implícito' }],
+  explicitMods: [{ description: 'Afijo' }],
+  craftedMods: ['Fabricado'],
+  fracturedMods: ['Fracturado'],
+});
+ok(grupos.enchant[0] === 'Encantamiento' && grupos.implicits[0] === 'Implícito' && grupos.mods[0] === 'Afijo'
+  && grupos.crafted[0] === 'Fabricado' && grupos.fractured[0] === 'Fracturado',
+  'encantamientos, implícitos, afijos, fabricados y fracturados van cada uno en su bloque');
+
+// ═══ COMPARACIÓN LÍNEA POR LÍNEA: 3 objetos, cada línea contra su origen ═══
+// Misma cantidad, mismo orden, mismo texto. Si una sola línea no coincide, falla.
+const TRES = [
+  { nombre: 'anillo raro', src: { name: 'Storm Loop', baseType: 'Sapphire Ring', rarity: 'Rare',
+      implicitMods: [{ description: '+18% to Cold Resistance' }],
+      explicitMods: [{ description: '+72 to maximum Life' }, { description: '+38% to Fire Resistance' }, { description: '+29 to Dexterity' }] } },
+  { nombre: 'amuleto único', src: { name: 'Astramentis', baseType: 'Stellar Amulet', rarity: 'Unique',
+      implicitMods: [{ description: '+6 to all Attributes' }],
+      explicitMods: [{ description: '+86 to all Attributes' }, { description: '-4 Physical Damage taken from Attack Hits' }],
+      flavourText: ['The stars are not for us.'] } },
+  { nombre: 'maza con fabricado y fracturado', src: { name: 'Torment Burst', baseType: 'Structured Hammer', rarity: 'Rare',
+      implicitMods: [{ description: '+15 to Strength' }],
+      explicitMods: [{ description: '+120 to maximum Life' }],
+      craftedMods: ['+25% to Quality'], fracturedMods: ['35% increased Physical Damage'] } },
+];
+let lineasOk = true;
+for (const { nombre, src } of TRES) {
+  const d = itemDetailPre(src);
+  const esperado = {
+    implicits: (src.implicitMods || []).map((m) => m.description),
+    mods: (src.explicitMods || []).map((m) => m.description),
+    crafted: src.craftedMods || [],
+    fractured: src.fracturedMods || [],
+    flavour: src.flavourText || [],
+  };
+  for (const [campo, want] of Object.entries(esperado)) {
+    const got = d[campo] || [];
+    const igual = got.length === want.length && want.every((x, i) => got[i] === x);
+    if (!igual) { lineasOk = false; console.log(`     ${nombre} · ${campo}: esperado ${JSON.stringify(want)}, salió ${JSON.stringify(got)}`); }
+  }
+}
+ok(lineasOk, 'COMPARACIÓN LÍNEA POR LÍNEA: 3 objetos, cada línea igual a su origen y en el mismo orden');
 
 // La ficha completa: el mercado manda el texto con el marcado interno del juego.
 const { cleanMarkup, propText, itemDetail } = await import('../src/worker/trade2.js');

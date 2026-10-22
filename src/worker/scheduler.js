@@ -5,7 +5,6 @@ import { planFor } from '../lib/plans.js';
 import { isBlocked } from './queue.js';
 import { checkShop, checkWishes, refreshCurrencies, isRunning } from './jobs.js';
 import { reviewSome } from './reviews.js';
-import { loadStats } from './trade2.js';
 
 let timer = null;
 let busy = false;
@@ -16,12 +15,6 @@ async function tick() {
   try {
     if (isBlocked()) return;
     const t = now();
-
-    // El diccionario de estadísticas se pide en un momento tranquilo, antes de leer
-    // tiendas: si se pide en mitad de una ráfaga, el límite del mercado lo tumba y los
-    // afijos de los objetos se quedan con su nombre interno. Se guarda en disco.
-    try { await loadStats(); } catch { /* el estado queda apuntado para el diagnóstico */ }
-    if (isBlocked()) return;
 
     if (t - Number(getState('last:currency', 0)) >= config.cadence.currency * 60) {
       try { await refreshCurrencies(); } catch (e) { console.error('[divisas]', e.message); setState('last:currency', now()); }

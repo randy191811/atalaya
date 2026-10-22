@@ -1,7 +1,5 @@
 // Cliente del mercado oficial (trade2). Solo lectura. Todo pasa por la cola serial.
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
 import { config } from '../lib/config.js';
 import { request } from './queue.js';
 
@@ -46,12 +44,15 @@ function flattenMods(arr) {
 // y debajo los modificadores que le tocaron al objeto. Se separan en dos grupos porque
 // un objeto puede traer los de arriba y faltarle los de abajo: entonces hay que ir a
 // buscarlos a otro sitio en vez de dar la ficha por buena con una sola línea.
-const IMPLICIT_FIELDS = ['enchantMods', 'scourgeMods', 'implicitMods', 'runeMods'];
+const ENCHANT_FIELDS = ['enchantMods', 'scourgeMods'];
+const IMPLICIT_FIELDS = ['implicitMods', 'runeMods'];
 const EXPLICIT_FIELDS = [
   'explicitMods', 'bondedMods', 'desecratedMods', 'veiledMods',
-  'crucibleMods', 'logbookMods', 'utilityMods', 'fracturedMods', 'craftedMods',
+  'crucibleMods', 'logbookMods', 'utilityMods',
 ];
-const MOD_ORDER = [...IMPLICIT_FIELDS, ...EXPLICIT_FIELDS];
+const CRAFTED_FIELDS = ['craftedMods'];
+const FRACTURED_FIELDS = ['fracturedMods'];
+const MOD_ORDER = [...ENCHANT_FIELDS, ...IMPLICIT_FIELDS, ...EXPLICIT_FIELDS, ...CRAFTED_FIELDS, ...FRACTURED_FIELDS];
 // Listas de texto que NO son modificadores, para que el barrido general no las cuele.
 const NOT_MODS = new Set([
   'flavourText', 'descrText', 'secDescrText', 'prophecyText', 'requirements',
@@ -96,138 +97,48 @@ export function reqText(p) {
   return Number(p.displayMode) === 1 ? `${vals.join(', ')} ${name}` : `${name} ${vals.join(', ')}`;
 }
 
-// Diccionario de estadísticas del mercado: convierte un identificador como
-// "explicit.stat_3299347043" en su texto ("#% increased Spell Damage").
-// SIN ESTO los afijos de los objetos raros salen con su nombre interno («Reaver's»,
-// «of Dueling») en vez de con lo que hacen, así que es imprescindible, no un respaldo.
-// Se guarda en disco una semana: así sobrevive a los reinicios y solo se pide una vez.
-const STATS_FILE = path.join(config.dataDir, 'trade-stats.json');
-const STATS_TTL = 7 * 86400_000;
-let statsDict = null;
-let statsTriedAt = 0;
-let statsStatus = 'todavía no se ha pedido';
-export const statsState = () => statsStatus;
-export function setStatsDict(d, estado) { // para las pruebas
-  statsDict = d;
-  statsTriedAt = 0;
-  statsStatus = estado || (d ? `${d.size} estadísticas` : 'todavía no se ha pedido');
-}
-
-function statsFromDisk() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
-    if (raw && raw.at && Date.now() - raw.at < STATS_TTL && raw.entries) {
-      const map = new Map(Object.entries(raw.entries));
-      if (map.size) {
-        statsDict = map;
-        statsStatus = `${map.size} estadísticas (guardadas el ${new Date(raw.at).toLocaleDateString('es')})`;
-        return true;
-      }
-    }
-  } catch { /* no hay copia o está rota: se pide al mercado */ }
-  return false;
-}
-
-export async function loadStats() {
-  if (statsDict) return statsDict;
-  if (statsFromDisk()) return statsDict;
-  // Si acaba de fallar se espera un poco, pero no una hora: sin esto la ficha queda coja.
-  if (Date.now() - statsTriedAt < 120_000) return null;
-  statsTriedAt = Date.now();
-  try {
-    const data = await request('GET', '/data/stats');
-    const map = new Map();
-    for (const group of (data && data.result) || []) {
-      for (const e of (group && group.entries) || []) {
-        if (e && e.id && e.text) map.set(String(e.id), String(e.text));
-      }
-    }
-    if (!map.size) {
-      statsStatus = 'el mercado respondió, pero sin ninguna estadística (cambió el formato de /data/stats)';
-      return null;
-    }
-    statsDict = map;
-    statsStatus = `${map.size} estadísticas cargadas`;
-    try {
-      fs.writeFileSync(STATS_FILE, JSON.stringify({ at: Date.now(), entries: Object.fromEntries(map) }), { mode: 0o600 });
-    } catch (e) {
-      statsStatus += ' (no se pudo guardar en disco: ' + (e.message || e) + ')';
-    }
-  } catch (e) {
-    statsStatus = `no se pudo pedir /data/stats: ${(e && e.message) || e}`;
-  }
-  return statsDict;
-}
-
-// Reconstruye el texto de un modificador a partir de sus valores y el diccionario.
-// { name:'Tyrannical', magnitudes:[{hash:'explicit.stat_X', min:'155', max:'169'}] }
-function textFromExtended(mod, dict) {
-  const out = [];
-  const seen = new Set();
-  const nombre = modText(mod) || 'Modificador';
-  for (const g of (mod && mod.magnitudes) || []) {
-    if (!g || !g.hash || seen.has(g.hash)) continue;
-    seen.add(g.hash);
-    const val = String(g.min) === String(g.max) ? String(g.min) : `${g.min}-${g.max}`;
-    const tpl = dict && dict.get(String(g.hash));
-    // Si una estadística no está en el diccionario NO se tira: se enseña el nombre del
-    // afijo con su valor. Antes se perdía en silencio y el objeto salía a medias.
-    out.push(tpl ? tpl.replace(/#/g, val) : `${nombre}: ${val}`);
-  }
-  if (out.length) return [...new Set(out)];
-  return nombre ? [nombre] : [];
-}
-
-// Cuántas estadísticas de este objeto no se han podido escribir con el diccionario.
-export function missingStats(it) {
+// `extended.mods` NO se pinta nunca. Ahí el mercado manda, por cada afijo, su nombre
+// interno («Occultist's», «of the Sage»), su grado y sus magnitudes: eso sirve para los
+// filtros de búsqueda y para la vista avanzada del juego (la de mantener Alt), pero NO es
+// el texto que ve el jugador. Enseñarlo como si fuera una estadística es un fallo.
+// Solo se usa para CONTAR cuántos afijos tiene el objeto y saber si falta texto.
+const AFFIX_GROUPS = ['explicit', 'crafted', 'fractured', 'veiled', 'desecrated'];
+export function countExtended(it, kinds = AFFIX_GROUPS) {
   const ex = it && it.extended && it.extended.mods;
   if (!ex || typeof ex !== 'object') return 0;
   let n = 0;
-  for (const group of Object.values(ex)) {
-    for (const mod of Array.isArray(group) ? group : []) {
-      for (const g of (mod && mod.magnitudes) || []) {
-        if (g && g.hash && !(statsDict && statsDict.get(String(g.hash)))) n++;
-      }
-    }
-  }
+  for (const [k, group] of Object.entries(ex)) if (kinds.includes(k) && Array.isArray(group)) n += group.length;
   return n;
 }
 
-function extendedGroup(it, kinds) {
-  const ex = it.extended && it.extended.mods;
-  if (!ex || typeof ex !== 'object') return [];
-  const out = [];
-  for (const [k, group] of Object.entries(ex)) {
-    if (!Array.isArray(group) || !kinds.includes(k)) continue;
-    for (const mod of group) out.push(...textFromExtended(mod, statsDict));
-  }
-  return out;
-}
-
-// ¿Este objeto se quedaría sin sus características propias? Entonces conviene
-// descargar el diccionario de estadísticas antes de leerlo.
-export function needsStatsDict(entry) {
-  const it = entry && entry.item;
-  if (!it || statsDict) return false;
-  const tieneTexto = EXPLICIT_FIELDS.some((k) => Array.isArray(it[k]) && it[k].length);
-  const tieneExtendido = !!(it.extended && it.extended.mods && Object.keys(it.extended.mods).length);
-  return !tieneTexto && tieneExtendido;
+// Cuántos afijos dice el mercado que tiene el objeto pero sin mandar su texto.
+// No se inventa nada con ellos: solo sirve para avisar de que falta información.
+export function missingText(it) {
+  const d = itemDetail(it);
+  return d ? d.sinTexto : 0;
 }
 
 // Los modificadores, separados en los dos bloques que enseña el juego:
 // `imp` = lo que trae la base (implícitos, runas, encantamientos, habilidad concedida)
 // `exp` = lo que le tocó al objeto (los afijos).
 export function collectModGroups(it) {
+  const enchant = [];
   const imp = [];
   const exp = [];
+  const crafted = [];
+  const fractured = [];
   const granted = [];
+  const todos = [enchant, imp, exp, crafted, fractured, granted];
   const into = (arr) => (v) => {
     const t = modText(v);
-    if (t && !imp.includes(t) && !exp.includes(t) && !granted.includes(t)) arr.push(t);
+    if (t && !todos.some((g) => g.includes(t))) arr.push(t);
   };
 
+  for (const k of ENCHANT_FIELDS) if (Array.isArray(it[k])) flattenMods(it[k]).forEach(into(enchant));
   for (const k of IMPLICIT_FIELDS) if (Array.isArray(it[k])) flattenMods(it[k]).forEach(into(imp));
   for (const k of EXPLICIT_FIELDS) if (Array.isArray(it[k])) flattenMods(it[k]).forEach(into(exp));
+  for (const k of CRAFTED_FIELDS) if (Array.isArray(it[k])) flattenMods(it[k]).forEach(into(crafted));
+  for (const k of FRACTURED_FIELDS) if (Array.isArray(it[k])) flattenMods(it[k]).forEach(into(fractured));
   // Las gemas vaal y similares traen una segunda cara en `hybrid`.
   if (it.hybrid && Array.isArray(it.hybrid.explicitMods)) flattenMods(it.hybrid.explicitMods).forEach(into(exp));
   // Cualquier otra lista de modificadores, incluida una que el juego añada mañana.
@@ -239,26 +150,26 @@ export function collectModGroups(it) {
   // las enseña en su propio bloque, encima del implícito, así que van aparte.
   if (Array.isArray(it.grantedSkills)) it.grantedSkills.forEach((p) => into(granted)(propText(p)));
 
-  // Si el objeto tiene afijos pero el mercado no mandó su texto, se reconstruye desde
-  // el bloque extendido. Esto es lo que rescata los modificadores de los raros.
-  if (!exp.length) extendedGroup(it, ['explicit', 'crafted', 'fractured', 'veiled', 'desecrated']).forEach(into(exp));
-  if (!imp.length) extendedGroup(it, ['implicit', 'enchant', 'rune', 'scourge']).forEach(into(imp));
-  return { imp, exp, granted };
+  // Aquí NO hay respaldo desde `extended.mods` a propósito: si el mercado no manda el
+  // texto del afijo, la sección se queda vacía y se avisa. Antes se rellenaba con el
+  // nombre interno del afijo y parecía una estadística, que es justo lo que no debe pasar.
+  return { enchant, imp, exp, crafted, fractured, granted };
 }
 
 // Reúne TODO el texto del objeto, pase lo que pase con el nombre de los campos.
 // Se devuelve en el orden del juego: primero lo de la base, luego lo propio del objeto.
 export function collectMods(it) {
-  const { imp, exp, granted } = collectModGroups(it);
+  const { enchant, imp, exp, crafted, fractured, granted } = collectModGroups(it);
+  const todo = [...enchant, ...granted, ...imp, ...fractured, ...exp, ...crafted];
   // Si de verdad no hay ningún modificador (tabletas, monedas, gemas…), se usan sus
   // propiedades y su descripción para no dejar la lista en blanco.
-  if (!imp.length && !exp.length && !granted.length) {
+  if (!todo.length) {
     const otros = [];
     if (Array.isArray(it.properties)) for (const p of it.properties) { const t = propText(p); if (t && !otros.includes(t)) otros.push(t); }
     for (const k of ['descrText', 'secDescrText']) { const t = cleanMarkup(it[k]); if (t && !otros.includes(t)) otros.push(t); }
     return otros;
   }
-  return [...granted, ...imp, ...exp];
+  return todo;
 }
 
 // La ficha completa, con los mismos bloques y en el mismo orden que el juego.
@@ -273,7 +184,7 @@ export function itemDetail(it) {
     }
     return out;
   };
-  const { imp, exp, granted } = collectModGroups(it);
+  const { enchant, imp, exp, crafted, fractured, granted } = collectModGroups(it);
   const req = lines(it.requirements, reqText);
   const sockets = Array.isArray(it.sockets) ? it.sockets.length : 0;
   const descr = [];
@@ -283,13 +194,19 @@ export function itemDetail(it) {
     requirements: req.length ? [`Requiere: ${req.join(', ')}`] : [],
     sockets: sockets ? [`${sockets} ${sockets === 1 ? 'engarce' : 'engarces'}`] : [],
     itemLevel: Number(it.ilvl || it.itemLevel) || null,
+    enchant,
     granted,
     implicits: imp,
+    fractured,
     mods: exp,
+    crafted,
     descr,
     flavour: lines(it.flavourText, cleanMarkup),
     corrupted: !!it.corrupted,
     unidentified: it.identified === false,
+    // Afijos que el mercado dice tener pero cuyo texto no ha mandado. No se rellenan:
+    // se avisa, en gris y fuera del bloque azul.
+    sinTexto: Math.max(0, countExtended(it) - exp.length - crafted.length - fractured.length),
   };
 }
 
@@ -345,7 +262,6 @@ export async function fetchEntries(ids, queryId, cookie) {
     const entries = ((data && data.result) || []).filter(Boolean);
     // Si algún objeto trae sus afijos sin texto, se descarga una sola vez el diccionario
     // del mercado para poder escribirlos. Lo normal es no necesitarlo nunca.
-    if (entries.some(needsStatsDict)) await loadStats();
     for (const e of entries) {
       const n = normalizeEntry(e);
       if (n) out.push(n);
@@ -384,7 +300,6 @@ export async function debugRawShopItem(account, leagueName, cookie, listingKey =
   const data = await request('GET', `/fetch/${ids.join(',')}?query=${encodeURIComponent(s.id)}`, { cookie });
   const entries = ((data && data.result) || []).filter(Boolean);
   if (!entries.length) return null;
-  if (entries.some(needsStatsDict)) await loadStats();
   // El que interesa mirar es el que se queda sin características propias.
   const roto = entries.find((e) => itemDetail(e.item) && !itemDetail(e.item).mods.length);
   const raw = roto || entries[0];
@@ -399,7 +314,7 @@ export async function debugRawShopItem(account, leagueName, cookie, listingKey =
       propiedades: d.properties || [],
       implicitos: d.implicits || [],
       afijos: d.mods || [],
-      diccionario: statsState(),
+      afijosSinTexto: missingText(raw.item),
     },
     crudo: raw,
   };
@@ -408,7 +323,6 @@ export async function debugRawShopItem(account, leagueName, cookie, listingKey =
 // Informe de lectura de toda la tienda, en texto plano y de una sola pieza: qué manda el
 // mercado de cada objeto y qué se ha conseguido leer. Pensado para copiar y pegar entero.
 export async function debugShopReport(account, leagueName, cookie, max = 30) {
-  await loadStats();
   const body = {
     query: { status: { option: 'any' }, filters: { trade_filters: { filters: { account: { input: account } } } } },
     sort: { price: 'asc' },
@@ -428,14 +342,13 @@ export async function debugShopReport(account, leagueName, cookie, max = 30) {
       if (d.mods.length) conAfijos++; else sinAfijos++;
       cuerpo.push(`• ${[it.name, it.baseType].filter(Boolean).join(' / ')} [${it.rarity || '?'}]${it.identified === false ? ' SIN IDENTIFICAR' : ''}`);
       cuerpo.push(`  campos: ${inventoryOf(it).join(' ')}`);
-      cuerpo.push(`  props ${d.properties.length} · req ${d.requirements.length} · concede ${d.granted.length} · implícitos ${d.implicits.length} · afijos ${d.mods.length} (fuente ${fuente}, sin texto ${missingStats(it)})`);
+      cuerpo.push(`  props ${d.properties.length} · req ${d.requirements.length} · concede ${d.granted.length} · implícitos ${d.implicits.length} · afijos ${d.mods.length} (fuente ${fuente}, sin texto ${missingText(it)})`);
       if (d.mods.length) cuerpo.push(`  → ${d.mods.join(' | ')}`);
     }
   }
   return [
     'Atalaya — informe de lectura del mercado',
     `cuenta ${account} · liga ${leagueName} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`,
-    `diccionario de estadísticas: ${statsState()}`,
     `anuncios en la tienda: ${Number(s && s.total) || all.length} · mirados: ${all.length} · con afijos: ${conAfijos} · sin afijos: ${sinAfijos}`,
     '',
     ...cuerpo,

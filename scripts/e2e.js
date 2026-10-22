@@ -257,11 +257,10 @@ try {
   section('[9c] Prueba de conexión con el mercado');
   ok((await user('POST', '/api/admin/diagnostico')).status === 403, 'solo el administrador puede lanzarla');
   const dg = await admin('POST', '/api/admin/diagnostico');
-  ok(dg.status === 200 && dg.json.steps.length === 6, 'hace los 6 pasos (ligas, tienda, búsqueda, diccionario, divine, chaos)');
+  ok(dg.status === 200 && dg.json.steps.length === 5, 'hace los 5 pasos (ligas, tienda, búsqueda, divine, chaos)');
   ok(dg.json.steps[0].ok === true && /ligas/.test(dg.json.steps[0].detail), 'lee las ligas reales del juego');
   ok(dg.json.steps[1].ok === false && /Añade primero tu tienda/.test(dg.json.steps[1].detail), 'sin tienda, lo explica en vez de fallar');
-  ok(dg.json.steps.slice(2).every((x) => x.ok) && /1 divine ≈/.test(dg.json.steps[4].detail), 'búsqueda, diccionario y divisas funcionan contra el mercado');
-  ok(/estadísticas/.test(dg.json.steps[3].detail), 'el diagnóstico dice si el diccionario de estadísticas está cargado');
+  ok(dg.json.steps.slice(2).every((x) => x.ok) && /1 divine ≈/.test(dg.json.steps[3].detail), 'búsqueda y divisas funcionan contra el mercado');
 
   section('[9d] Ligas de verdad, cuenta bien escrita y ficha completa del objeto');
   const lg = await user('GET', '/api/ligas');
@@ -298,10 +297,12 @@ try {
   ok(anillo && anillo.item_level === 82 && anillo.corrupted === true, 'guarda el nivel de objeto y la corrupción');
   ok(tablet && tablet.stats.includes('Nivel de monstruo: 79'), 'un objeto sin modificadores muestra sus propiedades en vez de quedarse en blanco');
   const varita = det.find((l) => l.name === 'Torment Weaver');
-  ok(varita && varita.stats.length === 3, 'un raro al que le falta el texto de sus afijos ya no sale con una sola línea');
-  ok(varita && varita.stats[0] === 'Grants Skill: Level 18 Spellslinger' && varita.stats[1] === '120% increased Spell Damage' && varita.stats[2] === '+30-38 to maximum Mana',
-    'se reconstruyen sus características completas, con el implícito primero');
-  ok((await get(fake + '/__stats')).calls.some((c) => c.path === '/data/stats'), 'para eso descarga el diccionario de estadísticas del mercado');
+  const dv = (varita && varita.detail) || {};
+  ok(varita && (dv.mods || []).length === 0 && !JSON.stringify(varita.stats).includes('Tyrannical'),
+    'un raro sin texto de afijos NO inventa nada: ni un nombre interno de afijo en la ficha');
+  ok(dv.sinTexto === 2 && (dv.implicits || [])[0] === 'Grants Skill: Level 18 Spellslinger',
+    'avisa de cuántos afijos quedaron sin texto y mantiene lo que sí vino');
+  ok(!(await get(fake + '/__stats')).calls.some((c) => c.path === '/data/stats'), 'y ya no se pide el diccionario de estadísticas: no hace falta');
   const maza = det.find((l) => l.name === 'Torment Burst');
   const fm = (maza && maza.detail) || {};
   ok(fm.properties && fm.properties[0] === 'One Hand Mace' && fm.properties[1] === 'Physical Damage: 65-79',
@@ -317,7 +318,7 @@ try {
   const sa = await admin('POST', '/api/tiendas', { account: 'Ana#1234', league: 'Liga Prueba' });
   await check(admin, sa.json.id);
   const dbg = (await admin('GET', '/api/admin/depurar-objeto')).json.raw;
-  ok(dbg && dbg.resumen.afijos.length === 0 && dbg.resumen.incompletos === 2 && dbg.resumen.revisados === 4,
+  ok(dbg && dbg.resumen.afijos.length === 0 && dbg.resumen.incompletos === 3 && dbg.resumen.revisados === 4,
     'sin pedirle nada, el depurador elige un objeto sin afijos y dice cuántos hay así');
   ok(dbg && (dbg.resumen.campos || []).includes('runeMods[1]') && dbg.resumen.implicitos.length === 1 && dbg.crudo && dbg.crudo.item,
     'y enseña en qué campo vienen los datos, con el objeto crudo debajo');
@@ -326,9 +327,9 @@ try {
   ok(dbg2 && dbg2.resumen.objeto.startsWith('Torment Burst') && dbg2.resumen.afijos.length === 1 && dbg2.resumen.propiedades.length === 2,
     'y desde la ficha de un objeto concreto trae ese objeto, no otro');
   const inf = await admin('GET', '/api/admin/informe');
-  ok(inf.status === 200 && /informe de lectura/.test(inf.json.texto) && /Torment Burst/.test(inf.json.texto) && /diccionario de estadísticas/.test(inf.json.texto),
+  ok(inf.status === 200 && /informe de lectura/.test(inf.json.texto) && /Torment Burst/.test(inf.json.texto),
     'el informe de una pulsación resume la tienda entera en texto');
-  ok(/fuente explicitMods/.test(inf.json.texto) && /fuente extended\.mods/.test(inf.json.texto) && /con afijos: 2/.test(inf.json.texto),
+  ok(/fuente explicitMods/.test(inf.json.texto) && /fuente extended\.mods/.test(inf.json.texto) && /con afijos: 1/.test(inf.json.texto),
     'y dice de dónde salió cada afijo y cuántos objetos quedaron sin ellos');
   await admin('DELETE', `/api/tiendas/${sa.json.id}`);
 

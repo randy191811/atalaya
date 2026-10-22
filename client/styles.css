@@ -193,6 +193,7 @@ details[open] > summary::before { transform: rotate(45deg); }
 .tip-meta b { color: #fff; font-weight: inherit; }
 .tip-corrupt { color: #d20000; }
 .tip-flavour { color: var(--rc); font-style: italic; }
+.tip-falta { color: #8c7b55; font-size: .86rem; font-style: italic; }
 .tip-prop { color: #7f7f7f; }
 .tip-prop b { color: #fff; font-weight: inherit; }
 
