@@ -87,7 +87,7 @@ const varitaSinTexto = {
   implicitMods: [{ description: 'Grants Skill: Level 18 Spellslinger', flags: {} }],
   extended: { mods: { explicit: [
     { name: "Ruthless", tier: 'P1', magnitudes: [{ hash: 'explicit.stat_1', min: '120', max: '120' }] },
-    { name: "Occultist's", tier: 'P2', magnitudes: [{ hash: 'explicit.stat_2', min: '30', max: '38' }] },
+    { name: "Occultist's", tier: 'P2', magnitudes: [{ hash: 'explicit.stat_2', min: '34', max: '34' }] },
     { name: 'of the Sage', tier: 'S1', magnitudes: [{ hash: 'explicit.stat_3', min: '12', max: '12' }] },
   ] } },
 };
@@ -133,6 +133,29 @@ const grupos = itemDetailPre({
 ok(grupos.enchant[0] === 'Encantamiento' && grupos.implicits[0] === 'Implícito' && grupos.mods[0] === 'Afijo'
   && grupos.crafted[0] === 'Fabricado' && grupos.fractured[0] === 'Fracturado',
   'encantamientos, implícitos, afijos, fabricados y fracturados van cada uno en su bloque');
+
+// Si el mercado NO manda el texto, se reescribe con el diccionario oficial del mercado.
+// Eso no es inventar: es el mismo texto y los mismos números que usa la web del mercado.
+const { setStatsDict, textFromExtended } = await import('../src/worker/trade2.js');
+setStatsDict(new Map([
+  ['explicit.stat_1', '#% increased Spell Damage'],
+  ['explicit.stat_2', '+# to maximum Mana'],
+  ['explicit.stat_4', 'Adds # to # Fire Damage to Spells'],
+]));
+const reescrita = itemDetailPre(varitaSinTexto);
+ok(reescrita.mods.length === 2 && reescrita.mods[0] === '120% increased Spell Damage' && reescrita.mods[1] === '+34 to maximum Mana',
+  'con el diccionario, los afijos se escriben con su texto real y su valor rodado');
+ok(!/\d+-\d+/.test(reescrita.mods.join(' ')), 'y sin rangos: un objeto concreto tiene su tirada, no un intervalo');
+ok(reescrita.sinTexto === 1, 'y el que no está en el diccionario se cuenta, no se inventa');
+ok(!NOMBRES_AFIJO.some((n) => JSON.stringify(reescrita.mods).includes(n)), 'ni aun así se cuela un nombre interno de afijo');
+ok(textFromExtended({ name: 'x', magnitudes: [
+  { hash: 'explicit.stat_4', min: '15', max: '15' }, { hash: 'explicit.stat_4', min: '28', max: '28' }] })[0] === 'Adds 15 to 28 Fire Damage to Spells',
+  'un modificador con dos valores de la misma estadística se escribe entero («Adds 15 to 28…»)');
+ok(textFromExtended({ name: 'desconocido', magnitudes: [{ hash: 'explicit.nada', min: '1', max: '1' }] }).length === 0,
+  'una estadística que no está en el diccionario no produce NINGUNA línea');
+// El texto que sí manda el mercado siempre gana sobre la reescritura.
+ok(itemDetailPre(varitaConTexto).mods[0] === '+73 to maximum Mana', 'si viene explicitMods, se copia ese y no se reescribe nada');
+setStatsDict(null);
 
 // ═══ COMPARACIÓN LÍNEA POR LÍNEA: 3 objetos, cada línea contra su origen ═══
 // Misma cantidad, mismo orden, mismo texto. Si una sola línea no coincide, falla.

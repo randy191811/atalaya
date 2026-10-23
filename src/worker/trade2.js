@@ -1,5 +1,7 @@
 // Cliente del mercado oficial (trade2). Solo lectura. Todo pasa por la cola serial.
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { config } from '../lib/config.js';
 import { request } from './queue.js';
 
@@ -103,12 +105,110 @@ export function reqText(p) {
 // el texto que ve el jugador. Enseñarlo como si fuera una estadística es un fallo.
 // Solo se usa para CONTAR cuántos afijos tiene el objeto y saber si falta texto.
 const AFFIX_GROUPS = ['explicit', 'crafted', 'fractured', 'veiled', 'desecrated'];
-export function countExtended(it, kinds = AFFIX_GROUPS) {
+const BASE_GROUPS = ['implicit', 'enchant', 'rune', 'scourge'];
+
+function extendedAffixes(it, kinds = AFFIX_GROUPS) {
   const ex = it && it.extended && it.extended.mods;
-  if (!ex || typeof ex !== 'object') return 0;
-  let n = 0;
-  for (const [k, group] of Object.entries(ex)) if (kinds.includes(k) && Array.isArray(group)) n += group.length;
-  return n;
+  if (!ex || typeof ex !== 'object') return [];
+  const out = [];
+  for (const [k, group] of Object.entries(ex)) if (kinds.includes(k) && Array.isArray(group)) out.push(...group);
+  return out;
+}
+export const countExtended = (it, kinds = AFFIX_GROUPS) => extendedAffixes(it, kinds).length;
+
+// Diccionario de estadísticas del mercado: convierte el identificador de una estadística
+// ("explicit.stat_3299347043") en su texto ("#% increased Spell Damage"). Es el mismo que
+// usa la web oficial del mercado para escribir los objetos. Se guarda en disco una semana.
+const STATS_FILE = path.join(config.dataDir, 'trade-stats.json');
+const STATS_TTL = 7 * 86400_000;
+let statsDict = null;
+let statsTriedAt = 0;
+let statsStatus = 'todavía no se ha pedido';
+export const statsState = () => statsStatus;
+export function setStatsDict(d, estado) { // para las pruebas
+  statsDict = d;
+  statsTriedAt = 0;
+  statsStatus = estado || (d ? `${d.size} estadísticas` : 'todavía no se ha pedido');
+}
+
+function statsFromDisk() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
+    if (raw && raw.at && Date.now() - raw.at < STATS_TTL && raw.entries) {
+      const map = new Map(Object.entries(raw.entries));
+      if (map.size) {
+        statsDict = map;
+        statsStatus = `${map.size} estadísticas (guardadas el ${new Date(raw.at).toLocaleDateString('es')})`;
+        return true;
+      }
+    }
+  } catch { /* no hay copia o está rota: se pide al mercado */ }
+  return false;
+}
+
+export async function loadStats() {
+  if (statsDict) return statsDict;
+  if (statsFromDisk()) return statsDict;
+  if (Date.now() - statsTriedAt < 120_000) return null;
+  statsTriedAt = Date.now();
+  try {
+    const data = await request('GET', '/data/stats');
+    const map = new Map();
+    for (const group of (data && data.result) || []) {
+      for (const e of (group && group.entries) || []) {
+        if (e && e.id && e.text) map.set(String(e.id), String(e.text));
+      }
+    }
+    if (!map.size) {
+      statsStatus = 'el mercado respondió, pero sin ninguna estadística (cambió el formato de /data/stats)';
+      return null;
+    }
+    statsDict = map;
+    statsStatus = `${map.size} estadísticas cargadas`;
+    try {
+      fs.writeFileSync(STATS_FILE, JSON.stringify({ at: Date.now(), entries: Object.fromEntries(map) }), { mode: 0o600 });
+    } catch (e) {
+      statsStatus += ' (no se pudo guardar en disco: ' + (e.message || e) + ')';
+    }
+  } catch (e) {
+    statsStatus = `no se pudo pedir /data/stats: ${(e && e.message) || e}`;
+  }
+  return statsDict;
+}
+
+// Escribe un afijo a partir de sus valores reales y del diccionario. Esto NO es inventar:
+// es el mismo texto y los mismos números que usa la web oficial del mercado.
+// Si una estadística no está en el diccionario, esa línea NO sale: antes se ponía el nombre
+// interno del afijo («Occultist's») y eso no es un modificador, es un metadato.
+export function textFromExtended(mod, dict = statsDict) {
+  const porHash = new Map();
+  for (const g of (mod && mod.magnitudes) || []) {
+    if (!g || !g.hash) continue;
+    const val = String(g.min) === String(g.max) ? String(g.min) : `${g.min}-${g.max}`;
+    if (!porHash.has(g.hash)) porHash.set(g.hash, []);
+    porHash.get(g.hash).push(val);
+  }
+  const out = [];
+  for (const [hash, vals] of porHash) {
+    const tpl = dict && dict.get(String(hash));
+    if (!tpl) continue;
+    let i = 0;
+    // «Adds # to # Fire Damage» lleva dos valores de la misma estadística, en orden.
+    out.push(tpl.replace(/#/g, () => (i < vals.length ? vals[i++] : '#')));
+  }
+  return out;
+}
+
+// Reescribe los afijos del bloque extendido y cuenta los que no se han podido escribir.
+export function rebuildFromExtended(it, kinds = AFFIX_GROUPS) {
+  const lineas = [];
+  let sinTexto = 0;
+  for (const mod of extendedAffixes(it, kinds)) {
+    const t = textFromExtended(mod);
+    if (t.length) lineas.push(...t);
+    else sinTexto++;
+  }
+  return { lineas, sinTexto };
 }
 
 // Cuántos afijos dice el mercado que tiene el objeto pero sin mandar su texto.
@@ -150,10 +250,17 @@ export function collectModGroups(it) {
   // las enseña en su propio bloque, encima del implícito, así que van aparte.
   if (Array.isArray(it.grantedSkills)) it.grantedSkills.forEach((p) => into(granted)(propText(p)));
 
-  // Aquí NO hay respaldo desde `extended.mods` a propósito: si el mercado no manda el
-  // texto del afijo, la sección se queda vacía y se avisa. Antes se rellenaba con el
-  // nombre interno del afijo y parecía una estadística, que es justo lo que no debe pasar.
-  return { enchant, imp, exp, crafted, fractured, granted };
+  // Si el mercado no manda el texto de los afijos, se reescriben desde el bloque extendido
+  // con el diccionario oficial de estadísticas: mismo texto y mismos números que la web del
+  // mercado. Lo que no esté en el diccionario NO sale: se cuenta y se avisa.
+  let sinTexto = 0;
+  if (!exp.length) {
+    const r = rebuildFromExtended(it);
+    r.lineas.forEach(into(exp));
+    sinTexto = r.sinTexto;
+  }
+  if (!imp.length) rebuildFromExtended(it, BASE_GROUPS).lineas.forEach(into(imp));
+  return { enchant, imp, exp, crafted, fractured, granted, sinTexto };
 }
 
 // Reúne TODO el texto del objeto, pase lo que pase con el nombre de los campos.
@@ -184,7 +291,7 @@ export function itemDetail(it) {
     }
     return out;
   };
-  const { enchant, imp, exp, crafted, fractured, granted } = collectModGroups(it);
+  const { enchant, imp, exp, crafted, fractured, granted, sinTexto } = collectModGroups(it);
   const req = lines(it.requirements, reqText);
   const sockets = Array.isArray(it.sockets) ? it.sockets.length : 0;
   const descr = [];
@@ -204,9 +311,9 @@ export function itemDetail(it) {
     flavour: lines(it.flavourText, cleanMarkup),
     corrupted: !!it.corrupted,
     unidentified: it.identified === false,
-    // Afijos que el mercado dice tener pero cuyo texto no ha mandado. No se rellenan:
+    // Afijos que no se han podido escribir con el diccionario. No se rellenan con nada:
     // se avisa, en gris y fuera del bloque azul.
-    sinTexto: Math.max(0, countExtended(it) - exp.length - crafted.length - fractured.length),
+    sinTexto,
   };
 }
 
@@ -255,6 +362,7 @@ export function normalizeEntry(entry) {
 }
 
 export async function fetchEntries(ids, queryId, cookie) {
+  await loadStats(); // instantáneo salvo la primerísima vez; se guarda en disco
   const out = [];
   for (let i = 0; i < ids.length; i += 10) {
     const chunk = ids.slice(i, i + 10);
@@ -315,6 +423,7 @@ export async function debugRawShopItem(account, leagueName, cookie, listingKey =
       implicitos: d.implicits || [],
       afijos: d.mods || [],
       afijosSinTexto: missingText(raw.item),
+      diccionario: statsState(),
     },
     crudo: raw,
   };
